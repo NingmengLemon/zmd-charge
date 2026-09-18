@@ -14,7 +14,18 @@ permissions:
 
 jobs:
   build:
-    runs-on: windows-latest
+    name: build (${{ matrix.rid }})
+    # 两个平台都编一遍。跨平台之后只在 Windows 上过 CI 等于没验 Linux。
+    strategy:
+      # 一个平台挂了也要能看到另一个平台的结果，别让它被取消掉
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+          - os: ubuntu-latest
+            rid: linux-x64
+    runs-on: ${{ matrix.os }}
 
     steps:
     - name: Checkout
@@ -41,6 +52,7 @@ jobs:
     #                应用一直提示更新、并把用户带到比当前代码更旧的发布版。
     #                仓库里一个 tag 都没有时（fork 常见）退化成 0.0.<run_number>。
     # 更新源用 github.repository，任何 fork 的 CI 产物都查自己的 Release。
+    # 两个平台各跑一次这个 step，结果一致（同一个 run_number、同一份 tag 历史）。
     - name: Resolve version and update source
       id: ver
       shell: pwsh
@@ -80,43 +92,89 @@ jobs:
     # 避免覆盖上面 Release 的输出、影响后面 --no-build 的 publish。
     # xunit v3 走 Microsoft.Testing.Platform（见 global.json 的 test.runner），
     # 这个模式下必须用 --project 指定工程，不能像 VSTest 模式那样直接传路径。
+    # 路径一律用正斜杠：Windows 与 Linux 都能吃，不必分平台写两份。
     - name: Test
-      run: dotnet test --project tests\EndfieldCharge.Tests -c Debug
+      run: dotnet test --project tests/EndfieldCharge.Tests -c Debug
 
     - name: Publish single-file
       run: dotnet publish -c Release -o publish --no-build
 
-    - name: Create portable zip
+    # 打包必须分平台：Windows 的产物是 exe，Linux 没有扩展名；压缩格式也不同。
+    # 两个平台都必须带上 SkiaSharp 的 native 库（libSkiaSharp / libHarfBuzzSharp，
+    # Windows 还多一个 ANGLE 的 av_libglesv2），只打可执行文件会导致启动即崩。
+    # pdb 是调试符号；xml 是 GenerateDocumentationFile 的产物（只为启用 IDE0005），
+    # 便携包都不需要。
+    - name: Package (Windows)
+      if: runner.os == 'Windows'
       shell: pwsh
       run: |
         $v = "${{ steps.ver.outputs.version }}"
-        if (!(Test-Path "publish\EndfieldCharge.exe")) {
-          Write-Error "publish\EndfieldCharge.exe not found"
+        $exe = "publish/EndfieldCharge.exe"
+        if (!(Test-Path $exe)) {
+          Write-Error "$exe not found"
           exit 1
         }
-        # 必须包含 SkiaSharp native dll（libSkiaSharp / libHarfBuzzSharp / av_libglesv2），
-        # 只打 exe 会导致启动即崩。
-        # pdb 是调试符号；xml 是 GenerateDocumentationFile 的产物（只为启用 IDE0005），
-        # 便携包都不需要。
-        $stage = "EndfieldCharge-$v-portable"
+        $stage = "EndfieldCharge-$v-${{ matrix.rid }}"
         New-Item -ItemType Directory -Path $stage | Out-Null
-        Copy-Item "publish\*" -Destination $stage -Exclude "*.pdb", "*.xml"
-        Compress-Archive -Path "$stage\*" -DestinationPath "$stage.zip"
+        Copy-Item "publish/*" -Destination $stage -Exclude "*.pdb", "*.xml"
+        Compress-Archive -Path "$stage/*" -DestinationPath "$stage.zip"
+        Remove-Item $stage -Recurse
+
+    - name: Package (Linux)
+      if: runner.os == 'Linux'
+      shell: pwsh
+      run: |
+        $v = "${{ steps.ver.outputs.version }}"
+        $exe = "publish/EndfieldCharge"
+        if (!(Test-Path $exe)) {
+          Write-Error "$exe not found"
+          exit 1
+        }
+        $stage = "EndfieldCharge-$v-${{ matrix.rid }}"
+        New-Item -ItemType Directory -Path $stage | Out-Null
+        Get-ChildItem "publish" -File |
+          Where-Object { $_.Extension -notin @('.pdb', '.xml') } |
+          Copy-Item -Destination $stage
+        # 用 tar.gz 而不是 zip：tar 保留可执行位，zip 不保留
+        tar -czf "$stage.tar.gz" -C $stage .
         Remove-Item $stage -Recurse
 
     - name: Upload build artifacts
       uses: actions/upload-artifact@v7
       with:
-        name: EndfieldCharge-${{ steps.ver.outputs.version }}
-        path: EndfieldCharge-*-portable.zip
+        name: EndfieldCharge-${{ steps.ver.outputs.version }}-${{ matrix.rid }}
+        # 用 rid 拼通配：写死两个平台的扩展名会在另一个平台上匹配不到而触发
+        # if-no-files-found: error
+        path: EndfieldCharge-${{ steps.ver.outputs.version }}-${{ matrix.rid }}.*
         if-no-files-found: error
+
+  # 发 Release 单独一个 job：两个平台的构建是并发跑的，各自去创建同一个 Release 会打架
+  # （action-gh-release 遇到已存在的 Release 走更新路径，并发时可能撞 422）。
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Resolve version
+      id: ver
+      shell: pwsh
+      run: |
+        $v = $env:GITHUB_REF -replace 'refs/tags/v', ''
+        "version=$v" >> $env:GITHUB_OUTPUT
+        Write-Host "Release version: $v"
+
+    - name: Download build artifacts
+      uses: actions/download-artifact@v8
+      with:
+        path: dist
+        merge-multiple: true
 
     # 只有推送 v* 标签才发 Release（标签由维护者手动创建）
     # v3 起运行时是 Node 24；v2 线仍跑在已弃用的 Node 20 上（runner 会给出 deprecation 警告）
     - name: Create GitHub Release
-      if: startsWith(github.ref, 'refs/tags/v')
       uses: softprops/action-gh-release@v3
       with:
         name: EndfieldCharge ${{ steps.ver.outputs.version }}
         generate_release_notes: true
-        files: EndfieldCharge-*-portable.zip
+        files: dist/*
