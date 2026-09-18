@@ -51,16 +51,10 @@ Desktop.ini
 $RECYCLE.BIN/
 *.lnk
 
-# ---------- 安装包 / 安装器输出 ----------
-installer/Output/
-installer/*.exe
-installer/*.zip
+# ---------- 便携包输出 ----------
 EndfieldCharge-*-portable/
 EndfieldCharge-*-portable.zip
-EndfieldCharge-*-setup.exe
 *.msi
-*.iss.bak
-ISCC*.log
 setup_*.exe
 
 # ---------- 日志 / 临时 ----------
