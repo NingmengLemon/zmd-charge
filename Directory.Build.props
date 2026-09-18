@@ -8,7 +8,10 @@
        ============================================================ -->
 
   <PropertyGroup>
-    <TargetFramework>net10.0-windows</TargetFramework>
+    <!-- 跨平台：Windows 与 Linux 共用一个 TFM。平台专有代码放在
+         Services/Windows 与 Services/Linux 下，用 [SupportedOSPlatform] 标注，
+         由编译期的 CA1416 把漏标注的地方抓出来，而不是靠两个 TFM 各编一遍。 -->
+    <TargetFramework>net10.0</TargetFramework>
     <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>

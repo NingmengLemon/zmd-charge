@@ -40,14 +40,29 @@ public class BatteryServiceTests
         }
     }
 
+    /// <summary>
+    /// HasBattery 表示"有没有检测到电池设备"，刻意与"容量知不知道"分开：
+    /// 少数 Linux 驱动只给 capacity/status，能给出电量百分比却给不出容量，
+    /// 那种情况下仍然要算有电池，否则低电量提醒会静默失效。
+    /// </summary>
     [Fact]
-    public void HasBattery_以满充容量是否为正判断()
+    public void HasBattery_与满充容量是否已知无关()
     {
-        var withBattery = new BatterySnapshot(50, 90, 55, AcOnline: false, Charging: false);
-        var without = new BatterySnapshot(0, 0, 0, AcOnline: true, Charging: false);
+        var withCapacity = new BatterySnapshot(50, 90, 55, AcOnline: false, Charging: false);
+        var withoutCapacity = new BatterySnapshot(0, 0, 15, AcOnline: false, Charging: false, HasBattery: true);
 
-        Assert.True(withBattery.HasBattery);
-        Assert.False(without.HasBattery);
+        Assert.True(withCapacity.HasBattery);
+        Assert.True(withoutCapacity.HasBattery);
+        Assert.Equal(0, withoutCapacity.FullWh);
+    }
+
+    /// <summary>显式传 HasBattery: false 时才算没有电池。</summary>
+    [Fact]
+    public void HasBattery_可以显式判为没有电池()
+    {
+        var noBattery = new BatterySnapshot(0, 0, 0, AcOnline: true, Charging: false, HasBattery: false);
+
+        Assert.False(noBattery.HasBattery);
     }
 
     /// <summary>
@@ -69,8 +84,8 @@ public class BatteryServiceTests
     [InlineData(11, true, false)]   // 部分充电（接电，未在充）
     public void WmiBatteryStatus_AC与充电语义分开(ushort status, bool acOnline, bool charging)
     {
-        Assert.Equal(acOnline, BatteryService.IsAcOnline(status));
-        Assert.Equal(charging, BatteryService.IsCharging(status));
+        Assert.Equal(acOnline, WmiBatteryStatus.IsAcOnline(status));
+        Assert.Equal(charging, WmiBatteryStatus.IsCharging(status));
     }
 
     [Fact]
@@ -78,8 +93,8 @@ public class BatteryServiceTests
     {
         for (ushort status = 0; status <= 12; status++)
         {
-            if (BatteryService.IsCharging(status))
-                Assert.True(BatteryService.IsAcOnline(status), $"status={status} 判为充电却不认为接电");
+            if (WmiBatteryStatus.IsCharging(status))
+                Assert.True(WmiBatteryStatus.IsAcOnline(status), $"status={status} 判为充电却不认为接电");
         }
     }
 }
