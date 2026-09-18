@@ -55,7 +55,9 @@ public static class Localization
     public static string PosTopLeft => IsChinese ? "顶部靠左" : "Top Left";
     public static string LabelLowBattery => IsChinese ? "低电量提醒阈值" : "Low Battery Alert Threshold";
     public static string LabelLowBatteryEnable => IsChinese ? "启用低电量提醒" : "Enable Low Battery Alert";
-    public static string LabelFullChargeEnable => IsChinese ? "充满时提醒" : "Alert When Fully Charged";// ---- 设置窗口段落标题 ----
+    public static string LabelFullChargeEnable => IsChinese ? "充满时提醒" : "Alert When Fully Charged";
+
+    // ---- 设置窗口段落标题 ----
     public static string SectionDisplay => IsChinese ? "显示" : "Display";
     public static string SectionPosition => IsChinese ? "位置与语言" : "Position & Language";
     public static string SectionStartup => IsChinese ? "启动" : "Startup";

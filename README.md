@@ -8,7 +8,7 @@
 
 ## 下载安装
 
-从 [Releases](https://github.com/Lenkmat/endfield-charge/releases) 下载：
+从 [Releases](https://github.com/NingmengLemon/zmd-charge/releases) 下载：
 
 | 文件 | 说明 |
 |------|------|
@@ -21,17 +21,18 @@
 |------|------|
 | 电量显示 | 剩余 / 满充容量（mWh，整数）与百分比，读取 `CallNtPowerInformation`，WMI 兜底 |
 | 电源监听 | `RegisterPowerSettingNotification` 订阅 GUID_ACDC_POWER_SOURCE，2s 轮询兜底，400ms 双向去抖（过滤 Windows 满电瞬时抖动） |
-| 低电量变色 | 电量 < 20% 时黄绿电量圈变红（#FF4D4F） |
-| 提醒通知 | 低电量提醒（阈值可调 5–40%）与充满提醒（≥99%），卡牌风格弹窗，4s 自动消失 |
-| 设置窗口 | 全局缩放（0.4–1.2）、显示时长（2–10s）、HUD 位置（顶部居中/靠右/靠左）、显示器选择、语言、开机自启，保存即生效并持久化 |
-| 托盘菜单 | 左键单击弹出自定义深色菜单（预览 / 设置 / 检查更新 / 退出） |
+| 低电量变色 | 电量低于设置里的低电量阈值时黄绿电量圈变红（默认 20%，#FF4D4F） |
+| 提醒通知 | 低电量提醒（阈值可调 5–40%）与充满提醒（≥99%），卡牌风格弹窗，4s 自动消失。由 30s 独立采样驱动，插拔瞬间额外复核一次 |
+| 设置窗口 | 全局缩放（0.4–1.2）、显示时长（3–10s）、HUD 位置（顶部居中/靠右/靠左）、显示器选择、语言、开机自启，保存即生效并持久化 |
+| 托盘菜单 | 左键单击弹出自定义深色菜单（预览 / 设置 / 检查更新 / 退出），并按光标所在显示器定位 |
 | 动画微调 | 设置窗口「动画」页实时预览并微调时长 / 回弹 / 波纹参数，保存即生效并持久化 |
 | 节能模式提示 | 开 / 关节能（省电）模式时弹出对应 HUD。24H2+（build 26100+）订阅 GUID_ENERGY_SAVER_STATUS 通知、轮询注册表 EnergySaverState；旧系统用 GUID_POWER_SAVING_STATUS + SystemStatusFlag。设置「通知」页可开关 |
-| 检查更新 | 读取 GitHub Releases API，比较程序集版本，一键跳转下载页 |
+| 检查更新 | 读取 GitHub Releases API，比较程序集版本，一键跳转下载页。目标仓库由 CI 用 `github.repository` 注入，本地构建退回本仓库 |
 | 多语言 | 中文 / 英文，默认跟随系统，可在设置中手动切换 |
 | 开机自启 | 设置窗口「通用」页开关，写 `HKCU\...\CurrentVersion\Run`（当前用户级，无需管理员） |
+| 单实例 | 重复启动不会开出第二个常驻进程，而是让已有实例弹一次 HUD |
 | 统一图标 | 托盘 / 各窗口 / exe / 安装器 / 卸载器统一使用 `Assets\tray_bolt` 图标 |
-| 日志 | `%TEMP%\EndfieldCharge\log-YYYYMMDD.txt`，方便排查托盘菜单定位等问题 |
+| 日志 | `%TEMP%\EndfieldCharge\log-YYYYMMDD.txt`（保留 7 天，单日上限 5MB），方便排查托盘菜单定位等问题 |
 
 ## 运行要求
 
@@ -45,12 +46,18 @@
 # 调试
 dotnet build -c Debug
 
+# 单测（纯逻辑，Debug 构建即可）
+dotnet test tests\EndfieldCharge.Tests
+
 # 发布（单文件 exe，输出到 publish/）
 dotnet publish -c Release -o publish
 
 # 本地打安装包（需安装 Inno Setup，iscc 在 PATH 中）
 iscc installer\EndfieldCharge.iss
 ```
+
+> SDK 版本由 `global.json` 钉在 8.0.x（`rollForward: latestFeature`），与本仓库 CI 一致，
+> 避免本地用新 SDK 写了新语法、CI 上编译不过。
 
 > 注意：`PublishSingleFile` 只把托管 dll 打进 exe，SkiaSharp 的 native dll
 > （libSkiaSharp / libHarfBuzzSharp / av_libglesv2）仍需与 exe 同目录 ——
@@ -67,6 +74,13 @@ git tag v1.0.0
 git push origin v1.0.0
 ```
 
+主干构建的版本号是 `<最近 tag>.<run_number>`（如 `1.1.1.500`），第 4 段让它比同名
+tag 更新 —— 否则 `0.0.N < 1.1.1` 会让应用一直提示更新，并把用户带到比当前代码更旧的发布版。
+
+同一个步骤还会把 `github.repository` 注入程序集元数据（`UpdateRepoOwner` /
+`UpdateRepoName`），所以任何 fork 的 CI 产物都查自己的 Release。本地构建不注入，
+退回 `EndfieldCharge.csproj` 里的默认值。
+
 ## 调试参数
 
 启动时追加参数，无需真的插拔电源：
@@ -77,9 +91,10 @@ git push origin v1.0.0
 | `--preview` | 用本机真实电池数据播放一次完整动画 |
 | `--preview-unplug` | 用示例数据播放一次**简化**动画（拔电） |
 | `--debug-ring` | 静态呈现状态 C（电量态）1.5s |
-| `--power-log` | 输出电源事件日志到 `%TEMP%\power-log.txt` |
+| `--power-log` | 输出电源事件日志到 `%TEMP%\power-log.txt`（上限 2MB，Debug / Release 均生效） |
+| `--show-fps` | 打开 Avalonia 渲染器自带的帧率叠层 |
 
-> 注意：这几个参数互斥，按 `--demo` → `--preview-unplug` → `--preview` 的优先级生效。
+> 注意：前四个参数互斥，按 `--demo` → `--preview-unplug` → `--preview` 的优先级生效。
 
 ## 项目结构
 
@@ -89,11 +104,11 @@ EndfieldCharge/
 │  └─ HudAnimations.cs      # 时间线与动画轨道（KeySpline 逐段缓动）
 ├─ Services/
 │  ├─ AutoStart.cs          # 开机自启（HKCU Run 键读写）
-│  ├─ BatteryService.cs     # 电池快照（剩余/满充 mWh、百分比、AC 状态）
-│  ├─ Logger.cs             # 文件日志（%TEMP%\EndfieldCharge\）
+│  ├─ BatteryService.cs     # 电池快照（剩余/满充 mWh、百分比、AC/充电状态）
+│  ├─ Logger.cs             # 文件日志（%TEMP%\EndfieldCharge\，7 天保留）
 │  ├─ PowerNative.cs        # P/Invoke：powrprof、message-only 窗口
 │  ├─ PowerWatcher.cs       # 电源变化监听 + 去抖确认
-│  └─ UpdateChecker.cs      # GitHub Releases 更新检查
+│  └─ UpdateChecker.cs      # GitHub Releases 更新检查（目标仓库编译期注入）
 ├─ Settings/
 │  ├─ AppSettings.cs        # 设置模型（缩放/动画微调/位置/显示器/语言/提醒）
 │  ├─ SettingsManager.cs    # 设置加载与持久化
@@ -107,6 +122,8 @@ EndfieldCharge/
 ├─ installer/
 │  ├─ EndfieldCharge.iss    # Inno Setup 安装脚本
 │  └─ Languages/            # 中文本地化（随仓库分发）
+├─ tests/
+│  └─ EndfieldCharge.Tests/ # 纯逻辑单测（版本解析 / 百分比 / 时间线映射）
 └─ .github/workflows/       # CI：自动构建 + 打标签发 Release
 ```
 
@@ -115,6 +132,7 @@ EndfieldCharge/
 - Avalonia 11 的 `KeyFrame` 使用 **`KeySpline`（贝塞尔控制点）** 做逐段缓动，多关键帧下 `Animation.Easing` 不生效 —— 每段必须显式指定 `KeySpline`，否则该段为线性。
 - `Border.HeightProperty`（即 `Layoutable.HeightProperty`）可直接动画，因此胶囊高度的 `60 → 90 → 60` 用独立轨道驱动。
 - 收尾「整体缩小关没」由外层 `ScaleHost` 的 `RenderTransform` 统一缩放，胶囊本身宽度不动。
+- HUD 窗口尺寸只比可见内容大一圈（`560×90 × 全局缩放`）。窗口是 `Topmost` 且背景可命中，开多大就会在插拔那几秒吞掉多大的鼠标点击区域。
 
 ## 许可证
 

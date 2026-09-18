@@ -55,7 +55,6 @@ $RECYCLE.BIN/
 installer/Output/
 installer/*.exe
 installer/*.zip
-publish/
 EndfieldCharge-*-portable/
 EndfieldCharge-*-portable.zip
 EndfieldCharge-*-setup.exe
