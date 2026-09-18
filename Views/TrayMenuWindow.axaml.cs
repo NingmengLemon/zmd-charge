@@ -75,27 +75,23 @@ public partial class TrayMenuWindow : Window
     /// <summary>在托盘图标上方显示菜单。</summary>
     public void ShowAtTray()
     {
-        if (Screens.Primary is { } screen)
+        // 光标位置与 WorkingArea 同为物理像素，天然规避缩放换算问题。
+        // 托盘图标可能在副屏任务栏上，因此按光标所在屏定位，取不到才退回主屏。
+        bool hasCursor = GetCursorPos(out var pt);
+        var cursor = hasCursor ? new PixelPoint(pt.X, pt.Y) : (PixelPoint?)null;
+        var screen = (cursor is { } c ? Screens.ScreenFromPoint(c) : null) ?? Screens.Primary;
+
+        if (screen is { } s)
         {
-            double scaling = screen.Scaling > 0 ? screen.Scaling : 1d;
-            var wa = screen.WorkingArea;
+            double scaling = s.Scaling > 0 ? s.Scaling : 1d;
+            var wa = s.WorkingArea;
 
             int winW = (int)Math.Round(Width * scaling);
             int winH = (int)Math.Round(Height * scaling);
 
-            int x, y;
-            // 点击托盘图标时光标正好停在图标上：菜单右缘对齐光标、底缘贴任务栏上方。
-            // 光标位置与 WorkingArea 同为物理像素，天然规避缩放换算问题。
-            if (GetCursorPos(out var pt))
-            {
-                x = pt.X - winW;
-                y = wa.Bottom - winH - 8;
-            }
-            else
-            {
-                x = wa.Right - winW - 8;
-                y = wa.Bottom - winH - 8;
-            }
+            // 点击托盘图标时光标正好停在图标上：菜单右缘对齐光标、底缘贴任务栏上方
+            int x = hasCursor ? pt.X - winW : wa.Right - winW - 8;
+            int y = wa.Bottom - winH - 8;
 
             // 夹紧，保证菜单完整落在工作区内
             x = Math.Clamp(x, wa.X + 8, Math.Max(wa.X + 8, wa.Right - winW - 8));
@@ -103,7 +99,8 @@ public partial class TrayMenuWindow : Window
 
             Position = new PixelPoint(x, y);
             Services.Logger.Info(
-                $"TrayMenu: cursor=({pt.X},{pt.Y}) winPx={winW}x{winH} wa={wa} pos=({x},{y})");
+                $"TrayMenu: cursor=({(hasCursor ? pt.X : 0)},{(hasCursor ? pt.Y : 0)}) hasCursor={hasCursor} " +
+                $"screen={s.Bounds} winPx={winW}x{winH} wa={wa} pos=({x},{y})");
         }
 
         Show();

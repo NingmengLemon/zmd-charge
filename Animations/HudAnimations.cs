@@ -77,6 +77,17 @@ internal static class HudAnimations
     private const double TNumIn = 0.38;     // 电量数字开始淡入（等 C 态稳定后约 0.1s）
     private const double TNumReady = 0.42;  // 电量数字淡入完成
 
+    /// <summary>
+    /// 完整三态时间线用到的全部基线 cue（升序）。
+    /// 单测用它守住"Cue 必须严格递增"这条不变量：乱序会让某一段被压到几十毫秒，
+    /// 位移看起来像瞬移。新增关键帧时请同步加进来。
+    /// </summary>
+    internal static readonly double[] BaselineCues =
+    {
+        0d, TStart, TAppear, TPillOut, TBoltPop, TExpand, TExpand + 0.02,
+        TMove, TTitle, THoldB, TContract, TNumIn, TNumReady, THoldC, TClose,
+    };
+
     private const double PillRadiusA = 30d;
     private const double PillRadiusB = 18d;
     private const double PillHeightA = 60d;   // 状态 A 与 C（圆胶囊等高）
@@ -98,8 +109,9 @@ internal static class HudAnimations
     /// 基线 cue → 实际时间线 cue。
     /// 入场段（≤0.42）固定占 0.42×6s=2.52s，剩余时间全给停留+退出段线性分配。
     /// DurationSeconds=6 时为恒等映射。
+    /// internal 以便单测直接验证（见 tests/EndfieldCharge.Tests）。
     /// </summary>
-    private static double MapCue(AnimationOptions o, double cue)
+    internal static double MapCue(AnimationOptions o, double cue)
     {
         double d = Math.Clamp(o.DurationSeconds, 3d, 10d);
         double introFrac = IntroEndCue * BaselineSeconds / d;
@@ -293,7 +305,13 @@ internal static class HudAnimations
     private const double TSimpleHold = 0.75;    // 停留结束
     private const double TSimpleClose = 0.80;   // 收回完成（scale 1→0）
 
-    private static double MapCueSimple(AnimationOptions o, double cue)
+    /// <summary>简化版时间线用到的全部基线 cue（升序），供单测验证映射严格递增。</summary>
+    internal static readonly double[] SimpleBaselineCues =
+    {
+        0d, TSimpleAppear, TSimpleAppear + 0.03, TSimpleHold, TSimpleClose,
+    };
+
+    internal static double MapCueSimple(AnimationOptions o, double cue)
     {
         double d = Math.Clamp(o.DurationSeconds, 3d, 10d);
         double introFrac = SimpleIntroEndCue * SimpleBaselineSeconds / d;

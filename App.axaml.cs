@@ -19,9 +19,19 @@ public partial class App : Application
     private HudWindow? _hud;
     private TrayIcon? _tray;
     private TrayMenuWindow? _trayMenu;
+    private SettingsWindow? _settingsWindow;
     private AppSettings _settings = new();
     private IClassicDesktopStyleApplicationLifetime? _desktop;
+    private DispatcherTimer? _alertTimer;
+    private EventWaitHandle? _showHudEvent;
+    private Thread? _showHudThread;
+    private volatile bool _exiting;
     private bool _lastLowBatteryNotified;
+    private bool _lastFullChargeNotified;
+
+    /// <summary>提醒的独立采样间隔。提醒不能挂在 HUD 触发上：放电过程中没有 HUD 事件，
+    /// 那样两个提醒基本永远不会弹。</summary>
+    private static readonly TimeSpan AlertPollInterval = TimeSpan.FromSeconds(30);
 
     public override void Initialize()
     {
@@ -59,6 +69,8 @@ public partial class App : Application
 
         SetupTrayIcon();
         StartPowerWatching();
+        StartAlertWatching();
+        StartShowHudListener();
 
         // 调试命令行参数
         if (HasCommandLineArg("--demo"))
@@ -107,7 +119,7 @@ public partial class App : Application
             RemainingWh: 62.4, FullWh: 90.0,
             Percent: 69, AcOnline: true, Charging: true);
 
-        await _hud.ShowAndPlayAsync(sample, acOnline: true);
+        await _hud.ShowAndPlayAsync(sample);
     }
 
     private async Task PreviewSimpleAsync()
@@ -135,6 +147,9 @@ public partial class App : Application
                     _ = TriggerHudAsync();
                 else
                     _ = TriggerSimpleHudAsync();
+
+                // 插拔瞬间立刻复核一次提醒条件，不必等下一个轮询 tick
+                _ = CheckAlertsAsync();
             });
         };
 
@@ -160,20 +175,15 @@ public partial class App : Application
     {
         if (_hud is null) return;
 
-        var snapshot = await Task.Run(() => BatteryService.GetSnapshot());
-        await _hud.ShowAndPlayAsync(snapshot, acOnline: true, HudPlayMode.PowerSaver);
+        var snapshot = await Task.Run(BatteryService.GetSnapshot);
+        await _hud.ShowAndPlayAsync(snapshot, HudPlayMode.PowerSaver);
     }
 
     private async Task TriggerSimpleHudAsync()
     {
         if (_hud is null) return;
 
-        var (snapshot, _) = await Task.Run(() =>
-        {
-            PowerNative.TryGetAcOnline(out bool ac);
-            return (BatteryService.GetSnapshot(), ac);
-        });
-
+        var snapshot = await Task.Run(BatteryService.GetSnapshot);
         await _hud.ShowSimpleAsync(snapshot);
     }
 
@@ -181,42 +191,70 @@ public partial class App : Application
     {
         if (_hud is null) return;
 
-        var (snapshot, acOnline) = await Task.Run(() =>
+        var snapshot = await Task.Run(BatteryService.GetSnapshot);
+        await _hud.ShowAndPlayAsync(snapshot);
+    }
+
+    // ---------------- 提醒（独立于 HUD 触发） ----------------
+
+    private void StartAlertWatching()
+    {
+        _alertTimer = new DispatcherTimer { Interval = AlertPollInterval };
+        _alertTimer.Tick += async (_, _) => await CheckAlertsAsync();
+        _alertTimer.Start();
+
+        // 启动时先复核一次：开机即处于低电量、或插着电已充满的情况
+        _ = CheckAlertsAsync();
+    }
+
+    private async Task CheckAlertsAsync()
+    {
+        if (!_settings.EnableLowBatteryAlert && !_settings.EnableFullChargeAlert)
+            return;
+
+        BatterySnapshot? snap;
+        try
         {
-            PowerNative.TryGetAcOnline(out bool ac);
-            return (BatteryService.GetSnapshot(), ac);
-        });
+            snap = await Task.Run(BatteryService.GetSnapshot);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex);
+            return;
+        }
 
-        await _hud.ShowAndPlayAsync(snapshot, acOnline);
+        if (snap is null || !snap.HasBattery)
+            return;
 
-        // 检查提醒条件
-        if (snapshot is not null)
-            CheckAlerts(snapshot);
+        CheckAlerts(snap);
     }
 
     /// <summary>检查并触发低电量 / 充满提醒。</summary>
     private void CheckAlerts(BatterySnapshot snap)
     {
-        if (!snap.HasBattery) return;
+        var kind = AlertPolicy.Decide(
+            snap,
+            _settings.LowBatteryThreshold,
+            _settings.EnableLowBatteryAlert,
+            _settings.EnableFullChargeAlert,
+            _lastLowBatteryNotified,
+            _lastFullChargeNotified);
 
-        // 充满提醒（充电中且 >= 99%）
-        if (_settings.EnableFullChargeAlert && snap.Charging && snap.Percent >= 99)
-        {
-            _ = ShowAlertAsync(Localization.FullChargeTitle, Localization.FullChargeMsg);
-        }
+        // 提醒位跟着"条件是否成立"走：条件成立就置位（同一次放电/充满不重复弹），
+        // 条件消失就复位（下一轮再满足时可以再弹一次）。
+        _lastFullChargeNotified =
+            snap.AcOnline && snap.Percent >= AlertPolicy.FullChargePercent;
+        _lastLowBatteryNotified =
+            !snap.AcOnline && snap.Percent <= _settings.LowBatteryThreshold;
 
-        // 低电量提醒（放电中且低于阈值，每轮只提醒一次）
-        if (_settings.EnableLowBatteryAlert && !snap.Charging && snap.Percent <= _settings.LowBatteryThreshold)
+        switch (kind)
         {
-            if (!_lastLowBatteryNotified)
-            {
-                _lastLowBatteryNotified = true;
+            case AlertKind.FullCharge:
+                _ = ShowAlertAsync(Localization.FullChargeTitle, Localization.FullChargeMsg);
+                break;
+            case AlertKind.LowBattery:
                 _ = ShowAlertAsync(Localization.LowBatteryTitle, Localization.LowBatteryMsg(snap.Percent));
-            }
-        }
-        else
-        {
-            _lastLowBatteryNotified = false;
+                break;
         }
     }
 
@@ -301,6 +339,39 @@ public partial class App : Application
             alert.Close();
     }
 
+    // ---------------- 第二个实例的唤醒通路 ----------------
+
+    private void StartShowHudListener()
+    {
+        try
+        {
+            _showHudEvent = new EventWaitHandle(
+                initialState: false, EventResetMode.AutoReset, Program.ShowHudEventName);
+        }
+        catch (Exception ex)
+        {
+            Logger.Error(ex);
+            return;
+        }
+
+        _showHudThread = new Thread(() =>
+        {
+            while (true)
+            {
+                _showHudEvent!.WaitOne();
+                if (_exiting)
+                    return;
+
+                Dispatcher.UIThread.Post(() => _ = TriggerHudAsync());
+            }
+        })
+        {
+            IsBackground = true,
+            Name = "ShowHudListener",
+        };
+        _showHudThread.Start();
+    }
+
     // ---------------- 托盘 ----------------
 
     private void SetupTrayIcon()
@@ -349,13 +420,18 @@ public partial class App : Application
         {
             _trayMenu.Close();
             _trayMenu = null;
+
+            // 对话框需要 owner；_hud 在托盘创建前就已构造，正常不会为空
+            if (_hud is not { } owner)
+                return;
+
             try
             {
                 var (hasUpdate, version, url) = await UpdateChecker.CheckAsync();
                 if (hasUpdate && url is not null)
                 {
                     var result = await MessageBox.Show(
-                        _hud ?? new HudWindow(),
+                        owner,
                         Localization.UpdateMsg(version ?? "?"),
                         Localization.UpdateTitle,
                         MessageBoxButton.OkCancel);
@@ -386,8 +462,17 @@ public partial class App : Application
 
     private void OpenSettingsWindow(string initialTab = "General")
     {
+        // 已开着就把它提到前面，避免连点托盘开出一堆设置窗
+        if (_settingsWindow is { } existing)
+        {
+            existing.Activate();
+            return;
+        }
+
         // _hud 在 OnFrameworkInitializationCompleted 中先于托盘创建，此处必非空
         var win = new SettingsWindow(_settings, _hud!, initialTab);
+        _settingsWindow = win;
+        win.Closed += (_, _) => _settingsWindow = null;
         win.Show();
     }
 
@@ -395,6 +480,18 @@ public partial class App : Application
 
     private void OnDesktopExit(object? sender, ControlledApplicationLifetimeExitEventArgs e)
     {
+        _exiting = true;
+
+        _alertTimer?.Stop();
+        _alertTimer = null;
+
+        // 唤醒等待中的监听线程（它是后台线程，不阻塞退出）
+        _showHudEvent?.Set();
+        _showHudThread?.Join(TimeSpan.FromSeconds(1));
+        _showHudThread = null;
+        _showHudEvent?.Dispose();
+        _showHudEvent = null;
+
         _watcher?.Dispose();
         _watcher = null;
 

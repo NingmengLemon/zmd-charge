@@ -33,7 +33,6 @@ public partial class SettingsWindow : Window
         }
         catch { }
 
-        Title = Localization.SettingsTitle;
         InitLanguageCombo();
         InitPositionCombo();
         InitPreviewModeCombo();
@@ -133,6 +132,7 @@ public partial class SettingsWindow : Window
 
     private void ApplyLocalization()
     {
+        Title = Localization.SettingsTitle;
         WinTitle.Text = Localization.SettingsTitle;
         TabGeneralText.Text = Localization.TabGeneral;
         TabAnimationText.Text = Localization.TabAnimation;
@@ -196,6 +196,28 @@ public partial class SettingsWindow : Window
     }
 
     // ---------------- 显示器 ----------------
+
+    /// <summary>语言切换后刷新窗口内全部文案（含标题栏与显示器下拉项），保留当前选择。</summary>
+    private void RefreshLocalization()
+    {
+        ApplyLocalization();
+
+        if (MonitorCombo.Items.Count == 0)
+            return;
+
+        if (MonitorCombo.Items[0] is ComboBoxItem primaryItem)
+            primaryItem.Content = Localization.MonitorPrimaryDefault;
+
+        var screens = Screens.All;
+        for (int i = 1; i < MonitorCombo.Items.Count; i++)
+        {
+            if (MonitorCombo.Items[i] is not ComboBoxItem item || item.Tag is not int idx)
+                continue;
+
+            bool isPrimary = idx >= 0 && idx < screens.Count && screens[idx].IsPrimary;
+            item.Content = Localization.MonitorName(idx, isPrimary);
+        }
+    }
 
     private void PopulateMonitors()
     {
@@ -321,14 +343,14 @@ public partial class SettingsWindow : Window
             switch (PreviewModeCombo.SelectedIndex)
             {
                 case 1:
-                    await _hud.ShowAndPlayAsync(sample, acOnline: true,
+                    await _hud.ShowAndPlayAsync(sample,
                         HudPlayMode.PowerSaver, options);
                     break;
                 case 2:
                     await _hud.ShowSimpleAsync(sample, options);
                     break;
                 default:
-                    await _hud.ShowAndPlayAsync(sample, acOnline: true,
+                    await _hud.ShowAndPlayAsync(sample,
                         HudPlayMode.Charge, options);
                     break;
             }
@@ -357,6 +379,9 @@ public partial class SettingsWindow : Window
 
         if (Application.Current is App app)
             app.OnSettingsChanged(settings);
+
+        // 语言可能刚被改掉，设置窗自己的文案要立刻跟上，否则得关掉重开才变
+        RefreshLocalization();
 
         SavedHint.Text = Localization.SavedToast;
         SavedHint.Opacity = 1;

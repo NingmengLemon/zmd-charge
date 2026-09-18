@@ -1,11 +1,13 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:sys="clr-namespace:System;assembly=netstandard">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
   <!-- ============================================================
        HUD 主题：严格对齐原视频实测取色
        胶囊 #312F30 实心；文字纯白靠 Opacity 分层；
-       唯一彩色是徽章的黄绿色。
+       唯一彩色是徽章的黄绿色（低电量时换成 BadgeLow 红）。
+
+       这里是 HUD 配色的唯一真源：HudWindow.axaml 与 HudWindow.axaml.cs
+       都从这里取值。改动前请注意，别在别处再抄一份字面量。
        ============================================================ -->
 
   <!-- ==== 胶囊背景：实心深炭色，无渐变 ==== -->
@@ -20,20 +22,10 @@
   <x:Double x:Key="Hud.TextSecondaryOpacity">0.55</x:Double>
   <x:Double x:Key="Hud.TextTertiaryOpacity">0.40</x:Double>
 
-  <!-- ==== 唯一彩色：徽章黄绿 ==== -->
+  <!-- ==== 徽章：常态黄绿，低于低电量阈值时转红 ==== -->
   <Color x:Key="Hud.Accent">#FFC6CA4C</Color>
+  <Color x:Key="Hud.BadgeLow">#FF4D4F</Color>
   <Color x:Key="Hud.BadgeDark">#FF262425</Color>
-
-  <!-- ==== 度量（1080p 基准，对应原视频实测） ==== -->
-  <sys:Double x:Key="Hud.PillRadius">43</sys:Double>
-
-  <!-- ==== 字号 ==== -->
-  <x:Double x:Key="Hud.Font.Tag">11</x:Double>
-  <x:Double x:Key="Hud.Font.Name">36</x:Double>
-  <x:Double x:Key="Hud.Font.Value">38</x:Double>
-  <x:Double x:Key="Hud.Font.Max">20</x:Double>
-  <x:Double x:Key="Hud.Font.Percent">32</x:Double>
-  <x:Double x:Key="Hud.Font.PercentSym">18</x:Double>
 
   <!-- ==== 无衬线字体族（Inter 优先，中文回退到系统黑体，均无描边） ==== -->
   <FontFamily x:Key="Hud.FontFamily">"HarmonyOS Sans SC", "HarmonyOS Sans", Inter, "Microsoft YaHei UI", "PingFang SC", sans-serif</FontFamily>

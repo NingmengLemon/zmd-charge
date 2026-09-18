@@ -2,9 +2,9 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        mc:Ignorable="d" d:DesignWidth="1200" d:DesignHeight="160"
+        mc:Ignorable="d" d:DesignWidth="560" d:DesignHeight="90"
         x:Class="EndfieldCharge.Views.HudWindow"
-        Width="1200" Height="160"
+        Width="560" Height="90"
         Title="EndfieldCharge"
 
         SystemDecorations="None"
@@ -27,9 +27,14 @@
   </Window.Resources>
 
   <!-- 胶囊是固定尺寸的"灵动岛"（560×60），整段动画宽度不变，
-       只有 CornerRadius 在全圆(30) ↔ 圆角矩形(12) 之间过渡。
-       ScaleHost 收尾整体缩放。 -->
-  <Grid x:Name="Root" Width="1200" Height="100" VerticalAlignment="Center">
+       只有 CornerRadius 在全圆(30) ↔ 圆角矩形(18) 之间过渡。
+       ScaleHost 收尾整体缩放。
+
+       窗口刻意只比可见内容大一点（560×90，够放下状态 B 的 90 高胶囊）：
+       窗口是 Topmost 且背景可命中，窗口开多大，插拔那几秒就吞掉多大的鼠标点击区域。
+       实际尺寸由 ApplySettings 按全局缩放设置，这里只是 1.0 倍的默认值。 -->
+  <Grid x:Name="Root" Width="560" Height="90"
+        HorizontalAlignment="Center" VerticalAlignment="Center">
     <!-- 全局缩放 0.8：整个 HUD 缩小 20% -->
     <Grid x:Name="GlobalScale"
           HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -51,7 +56,7 @@
       <Border x:Name="Pill"
               Width="560" Height="60"
               CornerRadius="30"
-              Background="#FF312F30"
+              Background="{StaticResource Hud.Pill}"
               ClipToBounds="True"
               HorizontalAlignment="Center"
               VerticalAlignment="Center"
@@ -131,22 +136,22 @@
 
         <!-- 圆形形态：状态 A 与 B（白圆 32 小一圈，平行四边形 logo 18 占大头） -->
         <Grid x:Name="CircleForm">
-          <Ellipse Width="32" Height="32" Fill="#FFE9E7E4"/>
+          <Ellipse Width="32" Height="32" Fill="{StaticResource Hud.IconPlate}"/>
           <PathIcon Width="18" Height="18"
                     Data="{DynamicResource Geo.Bolt}"
-                    Foreground="#FF141313"/>
+                    Foreground="{StaticResource Hud.BoltDark}"/>
         </Grid>
 
         <!-- 方形态：状态 C（18×18 圆角方块，在 32×32 容器内居中，logo 12） -->
         <Grid x:Name="SquareForm" Opacity="0">
           <Border Width="18" Height="18"
                   CornerRadius="4.5"
-                  Background="#FFE9E7E4"
+                  Background="{StaticResource Hud.IconPlate}"
                   HorizontalAlignment="Center"
                   VerticalAlignment="Center">
             <PathIcon Width="12" Height="12"
                       Data="{DynamicResource Geo.Bolt}"
-                      Foreground="#FF141313"/>
+                      Foreground="{StaticResource Hud.BoltDark}"/>
           </Border>
         </Grid>
       </Grid>
@@ -166,15 +171,15 @@
                    FontSize="9" FontWeight="Medium"
                    LetterSpacing="2"
                    HorizontalAlignment="Center"
-                   Foreground="White"
-                   Opacity="0.40"/>
+                   Foreground="{StaticResource Hud.TextPrimary}"
+                   Opacity="{StaticResource Hud.TextTertiaryOpacity}"/>
         <TextBlock x:Name="TitleText"
                    Text="超充模式"
                    FontFamily="{DynamicResource Hud.FontFamily}"
                    FontSize="26" FontWeight="Bold"
                    LetterSpacing="2"
                    HorizontalAlignment="Center"
-                   Foreground="White"/>
+                   Foreground="{StaticResource Hud.TextPrimary}"/>
       </StackPanel>
 
       <!-- ========== 数字态：瘦长布局——方块+Wh 靠左，% + 徽章 靠右，中间留空 ==========
@@ -204,12 +209,13 @@
                      Text="0.0"
                      FontFamily="{DynamicResource Hud.FontFamilyNumeric}"
                      FontSize="26" FontWeight="Medium"
-                     Foreground="White"/>
+                     Foreground="{StaticResource Hud.TextPrimary}"/>
           <TextBlock x:Name="WhMaxText"
                      Text="/0.0"
                      FontFamily="{DynamicResource Hud.FontFamilyNumeric}"
                      FontSize="14" FontWeight="Medium"
-                     Foreground="White" Opacity="0.55"
+                     Foreground="{StaticResource Hud.TextPrimary}"
+                     Opacity="{StaticResource Hud.TextSecondaryOpacity}"
                      VerticalAlignment="Center"/>
         </StackPanel>
 
@@ -219,11 +225,12 @@
                      Text="0"
                      FontFamily="{DynamicResource Hud.FontFamilyNumeric}"
                      FontSize="22" FontWeight="Medium"
-                     Foreground="White"/>
+                     Foreground="{StaticResource Hud.TextPrimary}"/>
           <TextBlock Text="%"
                      FontFamily="{DynamicResource Hud.FontFamilyNumeric}"
                      FontSize="13" FontWeight="Medium"
-                     Foreground="White" Opacity="0.55"
+                     Foreground="{StaticResource Hud.TextPrimary}"
+                     Opacity="{StaticResource Hud.TextSecondaryOpacity}"
                      VerticalAlignment="Center"/>
         </StackPanel>
 
@@ -233,45 +240,34 @@
              颜色：≥20% 黄绿 #C6CA4C，<20% 变红 #FF4D4F
              内部图形 = 笔记本电脑（屏幕描边 + 底座填充） -->
         <Grid x:Name="Badge" Grid.Column="7" Width="46" Height="46" VerticalAlignment="Center">
-          <Ellipse Width="46" Height="46" Fill="#FF262425"/>
+          <Ellipse Width="46" Height="46" Fill="{StaticResource Hud.BadgeDark}"/>
 
           <Path x:Name="BadgeArc"
                 Width="46" Height="46"
                 HorizontalAlignment="Center" VerticalAlignment="Center"
                 Stretch="None"
-                Stroke="#FFC6CA4C" StrokeThickness="4.5"
+                Stroke="{StaticResource Hud.Accent}" StrokeThickness="4.5"
                 StrokeLineCap="Round"/>
 
           <!-- 笔记本电脑图形：屏幕（描边矩形）+ 底座（填充条） -->
           <Grid x:Name="BadgeLaptop" Width="24" Height="17" VerticalAlignment="Center" HorizontalAlignment="Center">
             <Border x:Name="LaptopScreen"
                     Width="17" Height="11.5" CornerRadius="1.5"
-                    BorderBrush="#FFC6CA4C" BorderThickness="2"
+                    BorderBrush="{StaticResource Hud.Accent}" BorderThickness="2"
                     VerticalAlignment="Top" HorizontalAlignment="Center"/>
             <Border x:Name="LaptopBase"
                     Width="24" Height="3" CornerRadius="1.5"
-                    Background="#FFC6CA4C"
+                    Background="{StaticResource Hud.Accent}"
                     VerticalAlignment="Bottom" HorizontalAlignment="Center"/>
           </Grid>
 
           <Border x:Name="BadgeElectrode" Width="9" Height="3" CornerRadius="1,1,0,0"
-                  Background="#FFC6CA4C"
+                  Background="{StaticResource Hud.Accent}"
                   HorizontalAlignment="Center" VerticalAlignment="Center"
                   Margin="0,-14,0,0"/>
         </Grid>
       </Grid>
-
+      </Grid>
     </Grid>
-	    </Grid>
-
-	    <!-- FPS 调试计数器（仅 show-fps 参数时可见） -->
-		    <TextBlock x:Name="FpsText"
-		               HorizontalAlignment="Right" VerticalAlignment="Bottom"
-		               FontFamily="{DynamicResource Hud.FontFamilyNumeric}"
-		               FontSize="9" FontWeight="Medium"
-		               Foreground="#C6CA4C" Opacity="0.6"
-		               Margin="0,0,4,2"
-		               IsVisible="False"
-		               Text="-- FPS"/>
-	  </Grid>
-	</Window>
+  </Grid>
+</Window>

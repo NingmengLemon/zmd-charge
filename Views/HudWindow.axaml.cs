@@ -8,6 +8,7 @@ using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Rendering;
 using Avalonia.Styling;
 using Avalonia.Threading;
 using EndfieldCharge.Animations;
@@ -27,15 +28,26 @@ public partial class HudWindow : Window
 {
     private static readonly TimeSpan DismissDuration = TimeSpan.FromMilliseconds(160);
 
-    private static readonly Color BadgeColorNormal = Color.Parse("#C6CA4C");
-    private static readonly Color BadgeColorLow = Color.Parse("#FF4D4F");
+    // 徽章配色同样来自 Styles/HudTheme.axaml，别在这里另抄一份字面量
+    private static readonly Color BadgeColorNormal = ResolveThemeColor("Hud.Accent", "#C6CA4C");
+    private static readonly Color BadgeColorLow = ResolveThemeColor("Hud.BadgeLow", "#FF4D4F");
+
+    private static Color ResolveThemeColor(string key, string fallback)
+        => Application.Current?.TryFindResource(key, out var value) == true && value is Color color
+            ? color
+            : Color.Parse(fallback);
+
+    /// <summary>胶囊宽度（逻辑像素，与 XAML 一致）。</summary>
+    private const double PillWidth = 560d;
+
+    /// <summary>胶囊最大高度：状态 B 的 90。窗口按它留高度，否则状态 B 会被窗口裁掉。</summary>
+    private const double PillMaxHeight = 90d;
 
     private CancellationTokenSource? _cts;
     private AppSettings _settings = new();
     private AnimationOptions _animOptions = AnimationOptions.Default;
-    private int _fpsFrameCount;
-    private DateTime _fpsLastMeasure = DateTime.UtcNow;
     private bool _fpsEnabled;
+    private bool _fpsOverlayApplied;
 
     public HudWindow()
     {
@@ -48,11 +60,6 @@ public partial class HudWindow : Window
         PointerPressed += (_, _) => _ = DismissAsync();
 
         _fpsEnabled = Array.Exists(Environment.GetCommandLineArgs(), a => a == "--show-fps");
-        if (_fpsEnabled)
-        {
-            FpsText.IsVisible = true;
-            StartFpsCounter();
-        }
 
         ResetToInitial();
     }
@@ -66,6 +73,11 @@ public partial class HudWindow : Window
         // 全局缩放
         GlobalScale.RenderTransform = new ScaleTransform(settings.GlobalScale, settings.GlobalScale);
 
+        // 窗口尺寸跟着缩放走，始终只比可见内容大一圈。
+        // 窗口是 Topmost 且背景可命中，开大了就会在插拔那几秒吞掉下方窗口的点击。
+        Width = PillWidth * settings.GlobalScale;
+        Height = PillMaxHeight * settings.GlobalScale;
+
         // 更新本地化文本（可能语言变了）
         TagLineText.Text = Localization.TagLine;
         TitleText.Text = Localization.TitleMode;
@@ -75,7 +87,7 @@ public partial class HudWindow : Window
 
     public async Task ShowSimpleAsync(BatterySnapshot? battery, AnimationOptions? options = null)
     {
-        ApplyBattery(battery, acOnline: false);
+        ApplyBattery(battery);
 
         var o = options ?? _animOptions;
 
@@ -108,11 +120,10 @@ public partial class HudWindow : Window
 
     public async Task ShowAndPlayAsync(
         BatterySnapshot? battery,
-        bool acOnline,
         HudPlayMode mode = HudPlayMode.Charge,
         AnimationOptions? options = null)
     {
-        ApplyBattery(battery, acOnline);
+        ApplyBattery(battery);
 
         // 文案主题：充电 = 超充模式；省电 = 省电模式
         TagLineText.Text = mode == HudPlayMode.PowerSaver ? Localization.TagLineSaver : Localization.TagLine;
@@ -196,7 +207,7 @@ public partial class HudWindow : Window
     private const double RingDiameter = 46d;
     private const double RingThickness = 4.5d;
 
-    private void ApplyBattery(BatterySnapshot? snap, bool acOnline)
+    private void ApplyBattery(BatterySnapshot? snap)
     {
         double fraction = 0d;
 
@@ -216,7 +227,8 @@ public partial class HudWindow : Window
 
         BadgeArc.Data = BuildRingGeometry(fraction, RingDiameter, RingThickness);
 
-        var badgeColor = snap is not null && snap.HasBattery && snap.Percent < 20
+        // 变红阈值跟随设置里的低电量阈值，避免和提醒阈值各说各话
+        var badgeColor = snap is not null && snap.HasBattery && snap.Percent < _settings.LowBatteryThreshold
             ? BadgeColorLow
             : BadgeColorNormal;
         BadgeArc.Stroke = new SolidColorBrush(badgeColor);
@@ -260,33 +272,27 @@ public partial class HudWindow : Window
         return new Point(center.X + radius * Math.Cos(rad), center.Y + radius * Math.Sin(rad));
     }
 
-    // ---------------- FPS 计数器 ----------------
+    // ---------------- FPS 调试叠层 ----------------
 
-    private void StartFpsCounter()
+    /// <summary>
+    /// --show-fps 打开 Avalonia 渲染器自带的帧率叠层。
+    /// 之前这里自己数 DispatcherTimer 的 tick 数，测出来恒为 ~5"FPS"，
+    /// 和真实帧率无关；宁可去掉也不能留一个假指标。
+    /// </summary>
+    private void ApplyFpsOverlay()
     {
-        DispatcherTimer.Run(() =>
+        if (!_fpsEnabled || _fpsOverlayApplied)
+            return;
+
+        try
         {
-            if (!IsVisible)
-            {
-                _fpsFrameCount = 0;
-                _fpsLastMeasure = DateTime.UtcNow;
-                return true;
-            }
-
-            _fpsFrameCount++;
-
-            var now = DateTime.UtcNow;
-            var elapsed = (now - _fpsLastMeasure).TotalSeconds;
-            if (elapsed >= 1.0)
-            {
-                double fps = _fpsFrameCount / elapsed;
-                FpsText.Text = $"{fps:F0} FPS";
-                _fpsFrameCount = 0;
-                _fpsLastMeasure = now;
-            }
-
-            return true;
-        }, TimeSpan.FromMilliseconds(200));
+            RendererDiagnostics.DebugOverlays |= RendererDebugOverlays.Fps;
+            _fpsOverlayApplied = true;
+        }
+        catch
+        {
+            _fpsEnabled = false;
+        }
     }
 
     // ---------------- 动画复位 ----------------
@@ -434,6 +440,7 @@ public partial class HudWindow : Window
         if (!IsVisible)
             Show();
 
+        ApplyFpsOverlay();
         PositionTopCenter();
         Dispatcher.UIThread.Post(() =>
         {
