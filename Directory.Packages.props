@@ -1,0 +1,31 @@
+<Project>
+
+  <!-- ============================================================
+       中央包管理（CPM）：所有 PackageReference 的版本只在这里写一次，
+       工程文件里只写 Include。避免同一个包在两个工程里各钉一个版本、
+       升级时漏掉其中一个。
+
+       升级某个包：改这里的 Version，然后 dotnet build。
+       临时覆盖某工程：在该工程里写 <PackageReference ... VersionOverride="x" />。
+       ============================================================ -->
+
+  <PropertyGroup>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageVersion Include="Avalonia" Version="12.1.2" />
+    <PackageVersion Include="Avalonia.Desktop" Version="12.1.2" />
+    <PackageVersion Include="Avalonia.Themes.Fluent" Version="12.1.2" />
+    <PackageVersion Include="Avalonia.Fonts.Inter" Version="12.1.2" />
+    <!-- 电池信息兜底读取（主路径是 powrprof P/Invoke，无需此包；WMI 仅作备用） -->
+    <PackageVersion Include="System.Management" Version="10.0.12" />
+  </ItemGroup>
+
+  <ItemGroup Label="测试">
+    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageVersion Include="xunit" Version="2.9.2" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+</Project>

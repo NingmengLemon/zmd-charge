@@ -1,0 +1,98 @@
+# ============================================================
+# 代码风格基线。
+#
+# 与 Directory.Build.props 的 EnforceCodeStyleInBuild 配合：
+# 这里标成 warning 的规则会直接让构建失败（TreatWarningsAsErrors）。
+# 所以只把「本项目已经全部满足、且确实值得守住」的规则标成 warning，
+# 其余标 suggestion 作为 IDE 提示，不参与构建。
+#
+# 格式相关（缩进、换行、尾随空格）由 IDE / dotnet format 应用，
+# 不参与构建判定。
+# ============================================================
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+[*.{axaml,xml,csproj,props,targets,json,yml,yaml}]
+indent_size = 2
+
+[*.md]
+trim_trailing_whitespace = false
+
+[*.cs]
+
+# ---------------- using ----------------
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+# 多余的 using 直接当错误对待：它会掩盖重构残留
+dotnet_diagnostic.IDE0005.severity = warning
+
+# ---------------- 命名空间与类型声明 ----------------
+csharp_style_namespace_declarations = file_scoped:warning
+csharp_style_prefer_primary_constructors = true:suggestion
+
+# ---------------- null 检查 ----------------
+# 一律用 is null / is not null，不用 == null / ReferenceEquals
+dotnet_style_prefer_is_null_check_over_reference_equality_method = true:warning
+csharp_style_conditional_delegate_call = true:warning
+csharp_style_prefer_pattern_matching = true:suggestion
+csharp_style_prefer_not_pattern = true:suggestion
+
+# ---------------- 简化写法 ----------------
+csharp_prefer_simple_using_statement = true:warning
+dotnet_style_prefer_auto_properties = true:suggestion
+dotnet_style_prefer_conditional_expression_over_assignment = true:suggestion
+dotnet_style_prefer_conditional_expression_over_return = true:suggestion
+dotnet_style_prefer_compound_assignment = true:suggestion
+dotnet_style_prefer_simplified_boolean_expressions = true:suggestion
+dotnet_style_prefer_simplified_interpolation = true:suggestion
+csharp_style_expression_bodied_methods = when_on_single_line:suggestion
+csharp_style_expression_bodied_properties = when_on_single_line:suggestion
+csharp_style_expression_bodied_accessors = when_on_single_line:suggestion
+csharp_style_expression_bodied_constructors = false:suggestion
+csharp_style_expression_bodied_operators = when_on_single_line:suggestion
+
+# ---------------- var ----------------
+# 只在类型显而易见时用 var，别为了省字把类型藏起来
+csharp_style_var_for_built_in_types = false:suggestion
+csharp_style_var_when_type_is_apparent = true:suggestion
+csharp_style_var_elsewhere = false:suggestion
+
+# ---------------- 大括号与可读性 ----------------
+# 单行 if 允许不加大括号（when_multiline），多行必须加
+csharp_prefer_braces = when_multiline:suggestion
+dotnet_diagnostic.IDE0011.severity = suggestion
+
+# ---------------- 修饰符顺序与可见性 ----------------
+dotnet_style_require_accessibility_modifiers = for_non_interface_members:warning
+csharp_preferred_modifier_order = public,private,protected,internal,file,static,extern,new,virtual,abstract,sealed,override,readonly,unsafe,required,volatile,async:suggestion
+dotnet_style_readonly_field = true:warning
+
+# ---------------- this. 与类型名 ----------------
+dotnet_style_qualification_for_field = false:warning
+dotnet_style_qualification_for_property = false:warning
+dotnet_style_qualification_for_method = false:warning
+dotnet_style_qualification_for_event = false:warning
+
+# ---------------- 其他 ----------------
+dotnet_style_object_initializer = true:suggestion
+dotnet_style_collection_initializer = true:suggestion
+dotnet_style_explicit_tuple_names = true:suggestion
+dotnet_style_prefer_inferred_tuple_names = true:suggestion
+dotnet_style_prefer_inferred_anonymous_type_member_names = true:suggestion
+dotnet_style_namespace_match_folder = true:suggestion
+csharp_style_unused_value_assignment_preference = discard_variable:suggestion
+csharp_style_unused_value_expression_statement_preference = discard_variable:suggestion
+
+# ---------------- 测试工程 ----------------
+[tests/**/*.cs]
+# 测试方法名用下划线分段（被测对象_场景_期望）是通行约定，
+# 可读性收益远大于 CA1707「成员名不应含下划线」想防的问题
+dotnet_diagnostic.CA1707.severity = none

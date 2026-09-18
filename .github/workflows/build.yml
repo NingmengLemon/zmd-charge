@@ -23,11 +23,15 @@ jobs:
         # 需要完整 tag 历史：主干构建用 `git describe --tags --abbrev=0` 取最近 tag 作版本基线
         fetch-depth: 0
 
-    # SDK 版本以 global.json 为唯一真源，避免 CI 与本地各钉一个版本
+    # SDK 版本以 global.json 为唯一真源，避免 CI 与本地各钉一个版本。
+    # NuGet 缓存按 Directory.Packages.props 的内容做键：包版本集中在那里，
+    # 它没变就没必要重新下载。
     - name: Setup .NET
       uses: actions/setup-dotnet@v6
       with:
         global-json-file: global.json
+        cache: true
+        cache-dependency-path: Directory.Packages.props
 
     # ---- 版本号与更新源 ----
     # 版本号必须在 build 之前解析：程序集版本参与编译，应用内「检查更新」靠它比较。
@@ -61,7 +65,8 @@ jobs:
       run: dotnet restore
 
     - name: Build (Release)
-      run: dotnet build -c Release --no-restore /p:Version=${{ steps.ver.outputs.version }} /p:UpdateRepoOwner=${{ steps.ver.outputs.owner }} /p:UpdateRepoName=${{ steps.ver.outputs.repo }}
+      # ContinuousIntegrationBuild 把 PDB 里的路径归一化，让产物可复现
+      run: dotnet build -c Release --no-restore /p:ContinuousIntegrationBuild=true /p:Version=${{ steps.ver.outputs.version }} /p:UpdateRepoOwner=${{ steps.ver.outputs.owner }} /p:UpdateRepoName=${{ steps.ver.outputs.repo }}
 
     # 纯逻辑单元测试。用 Debug（主干项目只在 Release 设 RID），
     # 避免覆盖上面 Release 的输出、影响后面 --no-build 的 publish。
@@ -80,10 +85,12 @@ jobs:
           exit 1
         }
         # 必须包含 SkiaSharp native dll（libSkiaSharp / libHarfBuzzSharp / av_libglesv2），
-        # 只打 exe 会导致启动即崩
+        # 只打 exe 会导致启动即崩。
+        # pdb 是调试符号；xml 是 GenerateDocumentationFile 的产物（只为启用 IDE0005），
+        # 便携包都不需要。
         $stage = "EndfieldCharge-$v-portable"
         New-Item -ItemType Directory -Path $stage | Out-Null
-        Copy-Item "publish\*" -Destination $stage -Exclude "*.pdb"
+        Copy-Item "publish\*" -Destination $stage -Exclude "*.pdb", "*.xml"
         Compress-Archive -Path "$stage\*" -DestinationPath "$stage.zip"
         Remove-Item $stage -Recurse
 

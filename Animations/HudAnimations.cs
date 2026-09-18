@@ -1,4 +1,3 @@
-using System;
 using Avalonia;
 using Avalonia.Animation;
 using Avalonia.Controls;

@@ -1,4 +1,4 @@
-using System;
+using System.Globalization;
 using System.Management;
 using System.Runtime.Versioning;
 
@@ -112,8 +112,10 @@ public static class BatteryService
 
         return null;
 
-        static ushort? ReadUInt16(object? v) => v is null ? null : Convert.ToUInt16(v);
-        static uint? ReadUInt32(object? v) => v is null ? null : Convert.ToUInt32(v);
+        // WMI 返回的是 VARIANT，值可能是字符串，转换必须钉死不变文化：
+        // 某些区域设置下数字的解析结果会随 CurrentCulture 变（CA1305）
+        static ushort? ReadUInt16(object? v) => v is null ? null : Convert.ToUInt16(v, CultureInfo.InvariantCulture);
+        static uint? ReadUInt32(object? v) => v is null ? null : Convert.ToUInt32(v, CultureInfo.InvariantCulture);
         static uint? NonZero(uint? v) => v is > 0 ? v : null;
     }
 }

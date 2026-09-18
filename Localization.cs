@@ -1,4 +1,3 @@
-using System.Threading;
 using EndfieldCharge.Settings;
 
 namespace EndfieldCharge;
@@ -18,8 +17,8 @@ public static class Localization
         get
         {
             if (_settings?.Language is not null && _settings.Language != "auto")
-                return _settings.Language.StartsWith("zh");
-            return Thread.CurrentThread.CurrentUICulture.Name.StartsWith("zh");
+                return _settings.Language.StartsWith("zh", StringComparison.Ordinal);
+            return Thread.CurrentThread.CurrentUICulture.Name.StartsWith("zh", StringComparison.Ordinal);
         }
     }
 

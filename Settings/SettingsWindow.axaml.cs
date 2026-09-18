@@ -1,9 +1,7 @@
-using System;
-using System.Linq;
+using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
-using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
@@ -47,36 +45,37 @@ public partial class SettingsWindow : Window
         TabNotificationsBtn.PointerPressed += (_, _) => SwitchTab(TabNotificationsBtn, NotificationsPanel);
         TabAboutBtn.PointerPressed += (_, _) => SwitchTab(TabAboutBtn, AboutPanel);
 
-        // 滑块值同步
+        // 滑块值同步。
+        // 数值一律钉死不变文化：这是固定格式的读数，不该随系统区域设置换小数点符号（CA1305）
         ScaleSlider.PropertyChanged += (_, e) =>
         {
             if (e.Property == RangeBase.ValueProperty)
-                ScaleValue.Text = ScaleSlider.Value.ToString("F2");
+                ScaleValue.Text = ScaleSlider.Value.ToString("F2", CultureInfo.InvariantCulture);
         };
         DurationSlider.PropertyChanged += (_, e) =>
         {
             if (e.Property == RangeBase.ValueProperty)
-                DurationValue.Text = $"{DurationSlider.Value:F1}s";
+                DurationValue.Text = string.Create(CultureInfo.InvariantCulture, $"{DurationSlider.Value:F1}s");
         };
         BounceSlider.PropertyChanged += (_, e) =>
         {
             if (e.Property == RangeBase.ValueProperty)
-                BounceValue.Text = BounceSlider.Value.ToString("F3");
+                BounceValue.Text = BounceSlider.Value.ToString("F3", CultureInfo.InvariantCulture);
         };
         RippleIntensitySlider.PropertyChanged += (_, e) =>
         {
             if (e.Property == RangeBase.ValueProperty)
-                RippleIntensityValue.Text = RippleIntensitySlider.Value.ToString("F2");
+                RippleIntensityValue.Text = RippleIntensitySlider.Value.ToString("F2", CultureInfo.InvariantCulture);
         };
         RippleSpreadSlider.PropertyChanged += (_, e) =>
         {
             if (e.Property == RangeBase.ValueProperty)
-                RippleSpreadValue.Text = RippleSpreadSlider.Value.ToString("F2");
+                RippleSpreadValue.Text = RippleSpreadSlider.Value.ToString("F2", CultureInfo.InvariantCulture);
         };
         LowBatterySlider.PropertyChanged += (_, e) =>
         {
             if (e.Property == RangeBase.ValueProperty)
-                LowBatteryValue.Text = $"{LowBatterySlider.Value:F0}%";
+                LowBatteryValue.Text = string.Create(CultureInfo.InvariantCulture, $"{LowBatterySlider.Value:F0}%");
         };
 
         // 低电量开关联动

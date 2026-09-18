@@ -1,4 +1,3 @@
-using System;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
@@ -276,7 +275,7 @@ internal static class PowerNative
 
     // ---------- 壳通知（托盘图标弹气泡用，可选） ----------
 
-    [DllImport("kernel32.dll")]
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
     public static extern IntPtr GetModuleHandleW(string? lpModuleName);
 
     [DllImport("kernel32.dll")]

@@ -25,7 +25,7 @@ public sealed record AppSettings
     public bool EnableLowBatteryAlert { get; init; } = true;
     public bool EnableFullChargeAlert { get; init; } = true;
     public bool EnablePowerSaverNotify { get; init; } = true;
-    public bool EnableAutoStart { get; init; } = false;
+    public bool EnableAutoStart { get; init; }
 }
 
 public enum HudPosition

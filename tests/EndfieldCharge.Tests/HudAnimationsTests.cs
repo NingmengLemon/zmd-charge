@@ -1,5 +1,3 @@
-using System;
-using System.Linq;
 using EndfieldCharge.Animations;
 using EndfieldCharge.Settings;
 using Xunit;

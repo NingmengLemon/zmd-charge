@@ -1,11 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
+  <!-- TargetFramework / Nullable / ImplicitUsings / LangVersion / PlatformTarget /
+       TreatWarningsAsErrors / 分析器档位都在根目录的 Directory.Build.props 里，
+       这里只放主程序独有的东西。 -->
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net10.0-windows</TargetFramework>
-    <Nullable>enable</Nullable>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <LangVersion>latest</LangVersion>
     <!-- SettingsWindow 只在代码中带参构造，XAML 运行时加载器警告为误报 -->
     <NoWarn>$(NoWarn);AVLN3001</NoWarn>
     <ApplicationManifest>app.manifest</ApplicationManifest>
@@ -15,9 +15,7 @@
     <Authors>Lenkmat</Authors>
     <Company>Lenkmat</Company>
     <Copyright>Copyright © 2026 Lenkmat</Copyright>
-    <PlatformTarget>x64</PlatformTarget>
-    <!-- 本地构建与 CI 用同一道闸门：警告即错误。CI 里不再单独传参，避免两处不一致 -->
-    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+
     <!-- 单文件发布，方便丢进开机启动 -->
     <PublishSingleFile Condition="'$(Configuration)'=='Release'">true</PublishSingleFile>
     <SelfContained Condition="'$(Configuration)'=='Release'">false</SelfContained>
@@ -30,7 +28,7 @@
   </PropertyGroup>
 
   <!-- ============================================================
-       「检查更新」与安装器指向哪个仓库。
+       「检查更新」指向哪个仓库。
        CI 用 github.repository 覆盖（见 .github/workflows/build.yml），
        所以任何 fork 的 CI 产物都会查自己的 Release；
        本地构建（含 fork 后未改 CI）退回本仓库，不会指到别人的 fork。
@@ -46,13 +44,13 @@
     <AssemblyMetadata Include="UpdateRepoName" Value="$(UpdateRepoName)" />
   </ItemGroup>
 
+  <!-- 版本号统一由 Directory.Packages.props 管理 -->
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="12.1.2" />
-    <PackageReference Include="Avalonia.Desktop" Version="12.1.2" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.2" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.2" />
-    <!-- 电池信息兜底读取（主路径是 powrprof P/Invoke，无需此包；WMI 仅作备用） -->
-    <PackageReference Include="System.Management" Version="10.0.12" />
+    <PackageReference Include="Avalonia" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Avalonia.Themes.Fluent" />
+    <PackageReference Include="Avalonia.Fonts.Inter" />
+    <PackageReference Include="System.Management" />
   </ItemGroup>
 
   <ItemGroup>

@@ -1,7 +1,5 @@
-using System;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
+using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using Avalonia;
 using Avalonia.Animation;
 using Avalonia.Animation.Easings;
@@ -24,6 +22,12 @@ public enum HudPlayMode
     PowerSaver,
 }
 
+/// <summary>
+/// CA1001：本类持有可释放的 _cts，但释放时机是窗口关闭（OnClosed），不是 IDisposable。
+/// Avalonia 的 Window 不实现 IDisposable，自行实现会与未来可能的基类实现打架。
+/// </summary>
+[SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable",
+    Justification = "释放统一走 Window.OnClosed，这是框架给的生命周期钩子。")]
 public partial class HudWindow : Window
 {
     private static readonly TimeSpan DismissDuration = TimeSpan.FromMilliseconds(160);
@@ -219,9 +223,11 @@ public partial class HudWindow : Window
         }
         else
         {
-            WhValueText.Text = (snap.RemainingWh * 1000).ToString("F0");
-            WhMaxText.Text = $"/{snap.FullWh * 1000:F0}";
-            PercentText.Text = snap.Percent.ToString();
+            // 一律钉死不变文化：电量数字是给用户看的数值，不能随系统区域设置变成
+            // 阿拉伯数字/其他小数点符号（CA1305）
+            WhValueText.Text = (snap.RemainingWh * 1000).ToString("F0", CultureInfo.InvariantCulture);
+            WhMaxText.Text = "/" + (snap.FullWh * 1000).ToString("F0", CultureInfo.InvariantCulture);
+            PercentText.Text = snap.Percent.ToString(CultureInfo.InvariantCulture);
             fraction = Math.Clamp(snap.Percent / 100d, 0d, 1d);
         }
 
@@ -237,7 +243,7 @@ public partial class HudWindow : Window
         BadgeElectrode.Background = new SolidColorBrush(badgeColor);
     }
 
-    private static Geometry BuildRingGeometry(double fraction, double diameter, double thickness)
+    private static PathGeometry BuildRingGeometry(double fraction, double diameter, double thickness)
     {
         double radius = (diameter - thickness) / 2d;
         var center = new Point(diameter / 2d, diameter / 2d);
@@ -425,13 +431,18 @@ public partial class HudWindow : Window
         var primary = Screens.Primary;
 
         if (monitorIndex < 0)
-            return primary ?? screens.FirstOrDefault();
+            return primary ?? FirstScreen(screens);
 
         if (monitorIndex < screens.Count)
             return screens[monitorIndex];
 
-        return primary ?? screens.FirstOrDefault();
+        return primary ?? FirstScreen(screens);
     }
+
+    /// <summary>Screens.All 是 IReadOnlyList，直接取下标即可；
+    /// 用 FirstOrDefault 会白走一遍枚举器（CA1826）。</summary>
+    private static Avalonia.Platform.Screen? FirstScreen(IReadOnlyList<Avalonia.Platform.Screen> screens)
+        => screens.Count > 0 ? screens[0] : null;
 
     private void ShowPositioned()
     {
@@ -446,5 +457,16 @@ public partial class HudWindow : Window
         {
             PositionTopCenter();
         }, DispatcherPriority.Loaded);
+    }
+
+    // ---------------- 收尾 ----------------
+
+    /// <summary>窗口关闭时释放动画取消源。原来 _cts 只被替换、从不释放，是一处真实的泄漏。</summary>
+    protected override void OnClosed(EventArgs e)
+    {
+        _cts?.Cancel();
+        _cts?.Dispose();
+        _cts = null;
+        base.OnClosed(e);
     }
 }

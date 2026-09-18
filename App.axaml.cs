@@ -1,5 +1,4 @@
-using System;
-using System.Threading.Tasks;
+using System.Diagnostics.CodeAnalysis;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -13,6 +12,13 @@ using EndfieldCharge.Views;
 
 namespace EndfieldCharge;
 
+/// <summary>
+/// CA1001：本类确实持有 IDisposable 字段（PowerWatcher / TrayIcon / EventWaitHandle），
+/// 但它们的释放时机是 ApplicationLifetime 的 Exit（OnDesktopExit），而不是 IDisposable。
+/// Avalonia 的 Application 不是 IDisposable，自己实现一个只会多一层没有调用保证的间接。
+/// </summary>
+[SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable",
+    Justification = "释放统一走 ApplicationLifetime.Exit -> OnDesktopExit，这是框架给的生命周期钩子。")]
 public partial class App : Application
 {
     private PowerWatcher? _watcher;
@@ -56,7 +62,11 @@ public partial class App : Application
         // 全局未捕获异常兜底
         AppDomain.CurrentDomain.UnhandledException += (_, e) =>
         {
-            Logger.Error(e.ExceptionObject as Exception ?? new Exception("Unknown unhandled error"));
+            // 异常对象不一定是 Exception，但两种都要把原文记下来，别丢信息
+            if (e.ExceptionObject is Exception ex)
+                Logger.Error(ex);
+            else
+                Logger.Error($"Unhandled non-exception object: {e.ExceptionObject}");
         };
         TaskScheduler.UnobservedTaskException += (_, e) =>
         {

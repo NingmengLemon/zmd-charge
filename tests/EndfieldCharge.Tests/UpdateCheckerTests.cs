@@ -1,4 +1,3 @@
-using System;
 using EndfieldCharge.Services;
 using Xunit;
 

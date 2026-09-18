@@ -1,10 +1,8 @@
-using System;
-using System.Threading;
 using Avalonia;
 
 namespace EndfieldCharge;
 
-class Program
+internal class Program
 {
     private const string SingleInstanceMutexName = @"Local\EndfieldCharge_SingleInstance_7C1D";
 
