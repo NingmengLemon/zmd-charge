@@ -103,14 +103,24 @@ public sealed class PowerWatcher : IDisposable
         _threadId = PowerNative.GetCurrentThreadId();
 
         // ---- 注册窗口类 ----
-        var wcex = new PowerNative.WndClassEx
+        // 类名以 IntPtr 传进 WNDCLASSEXW（原因见 PowerNative.WndClassEx 的注释）。
+        // RegisterClassExW 会把类名拷进系统内部，所以注册完就能释放这块内存。
+        var classNamePtr = Marshal.StringToHGlobalUni(ClassName);
+        try
         {
-            CbSize = (uint)Marshal.SizeOf<PowerNative.WndClassEx>(),
-            LpfnWndProc = Marshal.GetFunctionPointerForDelegate(_wndProc),
-            HInstance = PowerNative.GetModuleHandleW(null),
-            LpszClassName = ClassName,
-        };
-        PowerNative.RegisterClassExW(ref wcex);
+            var wcex = new PowerNative.WndClassEx
+            {
+                CbSize = (uint)Marshal.SizeOf<PowerNative.WndClassEx>(),
+                LpfnWndProc = Marshal.GetFunctionPointerForDelegate(_wndProc),
+                HInstance = PowerNative.GetModuleHandleW(null),
+                LpszClassName = classNamePtr,
+            };
+            PowerNative.RegisterClassExW(ref wcex);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(classNamePtr);
+        }
 
         // ---- message-only 窗口：不可见、不进任务栏、只收消息 ----
         _hwnd = PowerNative.CreateWindowExW(

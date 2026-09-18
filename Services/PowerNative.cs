@@ -10,9 +10,13 @@ namespace EndfieldCharge.Services;
 ///   2. WMI Win32_Battery —— 兜底，部分机型 powrprof 返回 MaxCapacity=0。
 /// 一条监听路径：
 ///   RegisterPowerSettingNotification + 隐藏消息窗，接收 WM_POWERBROADCAST / PBT_POWERSETTINGCHANGE。
+///
+/// 所有 P/Invoke 都用 [LibraryImport]（编译期源生成封送代码）而不是 [DllImport]（运行期 IL stub）：
+/// 前者没有首次调用的 stub 生成开销，也不依赖运行期反射，是 .NET 7+ 的推荐写法。
+/// 代价是所在类型必须 partial、方法必须 partial。
 /// </summary>
 [SupportedOSPlatform("windows")]
-internal static class PowerNative
+internal static partial class PowerNative
 {
     // ---------- CallNtPowerInformation ----------
 
@@ -47,38 +51,39 @@ internal static class PowerNative
         public uint DefaultAlert2;
     }
 
-    [DllImport("powrprof.dll", SetLastError = true)]
-    private static extern uint CallNtPowerInformation(
+    /// <summary>输出缓冲区直接声明成 out 结构体，由源生成器负责取地址，不用手工 AllocHGlobal。</summary>
+    [LibraryImport("powrprof.dll", SetLastError = true)]
+    private static partial uint CallNtPowerInformation(
         int informationLevel,
         IntPtr inputBuffer,
         int inputBufferSize,
-        IntPtr outputBuffer,
+        out SystemBatteryState outputBuffer,
         int outputBufferSize);
+
+    private static int _batteryFailureLogged;
 
     /// <summary>读取系统电池状态。返回 false 表示无电池或读取失败。</summary>
     public static bool TryGetBatteryState(out SystemBatteryState state)
     {
         state = default;
-        int size = Marshal.SizeOf<SystemBatteryState>();
-        IntPtr ptr = IntPtr.Zero;
         try
         {
-            ptr = Marshal.AllocHGlobal(size);
             // NTSTATUS：0 = STATUS_SUCCESS
-            if (CallNtPowerInformation(SystemBatteryStateLevel, IntPtr.Zero, 0, ptr, size) != 0)
+            if (CallNtPowerInformation(
+                    SystemBatteryStateLevel, IntPtr.Zero, 0,
+                    out var result, Marshal.SizeOf<SystemBatteryState>()) != 0)
                 return false;
 
-            state = Marshal.PtrToStructure<SystemBatteryState>(ptr);
+            state = result;
             return state.BatteryPresent != 0 && state.MaxCapacity > 0;
         }
         catch
         {
+            // 这个函数会被 30 秒一次的提醒轮询反复调用，失败时每次记一行会迅速刷爆日志，
+            // 所以只在进程内第一次失败时记一次。
+            Logger.Once(ref _batteryFailureLogged,
+                "powrprof CallNtPowerInformation 调用失败，电池信息退回 WMI 路径");
             return false;
-        }
-        finally
-        {
-            if (ptr != IntPtr.Zero)
-                Marshal.FreeHGlobal(ptr);
         }
     }
 
@@ -100,15 +105,25 @@ internal static class PowerNative
     /// <summary>GUID_BATTERY_PERCENTAGE_REMAINING：电量百分比变化。</summary>
     public static readonly Guid GuidBatteryPercentageRemaining = new("a7ad8041-b45a-4cae-87a3-eecbb468a9e1");
 
-    /// <summary>GUID_POWER_SAVING_STATUS：省电模式开/关（Win10 ~ 23H2）。Data: 1=开, 0=关。
+    /// <summary>GUID_POWER_SAVING_STATUS：省电模式开/关。Data: 1=开, 0=关。
     /// 值来自 WinNT.h（E00958C0-C213-4ACE-AC77-FECCED2EEEA5），写错将永远收不到通知。</summary>
     public static readonly Guid GuidPowerSavingStatus = new("e00958c0-c213-4ace-ac77-fecced2eeea5");
 
-    /// <summary>GUID_ENERGY_SAVER_STATUS：节能模式状态（24H2 / build 26100+ 取代省电模式）。
+    /// <summary>
+    /// GUID_ENERGY_SAVER_STATUS：节能模式状态（24H2 / build 26100+ 取代省电模式）。
     /// Data: 0=ENERGY_SAVER_OFF, 1=STANDARD, 2=HIGH_SAVINGS（非 0 即开启）。
-    /// 25H2 实测：快速设置开关节能模式时，只有此 GUID 推送通知，老的
-    /// GUID_POWER_SAVING_STATUS 与 SystemStatusFlag 均不再反映该开关。</summary>
+    ///
+    /// 已知缺陷，不要依赖这条路径：本常量的值没有出处。它不在 Windows SDK 头文件里
+    /// （10.0.19041 / 10.0.22621 的 winnt.h 只有 GUID_ENERGY_SAVER_SUBGROUP /
+    /// _BATTERY_THRESHOLD / _BRIGHTNESS / _POLICY，整个 Include 树里搜不到
+    /// ENERGY_SAVER_STATUS），值本身又是 RFC 4122 的示例 UUID
+    /// 550e8400-e29b-41d4-a716-446655440000。因此拿它去调
+    /// RegisterPowerSettingNotification 收不到任何通知，节能模式提示在 24H2+ 上实际是死的。
+    /// 保留而不删除，是因为删除前需要先确认 24H2+ 上正确的替代方式。
+    /// </summary>
     public static readonly Guid GuidEnergySaverStatus = new("550e8400-e29b-41d4-a716-446655440000");
+
+    private static int _saverFailureLogged;
 
     /// <summary>读取省电/节能模式当前是否开启。
     /// 24H2+：节能模式状态在注册表 EnergySaverState（实测 1=开, 2=关）。
@@ -137,6 +152,8 @@ internal static class PowerNative
         }
         catch
         {
+            // 同上：这个函数会被 2 秒一次的兜底轮询反复调用，只在首次失败时记一次
+            Logger.Once(ref _saverFailureLogged, "读取省电模式状态失败，省电模式提示将不可用");
             return false;
         }
         return false;
@@ -154,9 +171,9 @@ internal static class PowerNative
         public uint BatteryFullLifeTime;
     }
 
-    [DllImport("kernel32.dll", SetLastError = true)]
+    [LibraryImport("kernel32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool GetSystemPowerStatus(out SystemPowerStatus lpSystemPowerStatus);
+    private static partial bool GetSystemPowerStatus(out SystemPowerStatus lpSystemPowerStatus);
 
     public const int WmPowerBroadcast = 0x0218;
     public const int PbtPowerSettingChange = 0x8013;
@@ -174,21 +191,27 @@ internal static class PowerNative
         public byte Data;
     }
 
-    [DllImport("user32.dll", SetLastError = true)]
-    public static extern IntPtr RegisterPowerSettingNotification(
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial IntPtr RegisterPowerSettingNotification(
         IntPtr hRecipient,
         ref Guid powerSettingGuid,
         int flags);
 
-    [DllImport("user32.dll", SetLastError = true)]
+    [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool UnregisterPowerSettingNotification(IntPtr handle);
+    public static partial bool UnregisterPowerSettingNotification(IntPtr handle);
 
     // ---------- 隐藏消息窗 ----------
 
     public delegate IntPtr WndProcDelegate(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
-    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    /// <summary>
+    /// WNDCLASSEXW。字符串字段刻意用 IntPtr 而不是 string：
+    /// 一是让整个结构保持 blittable，源生成器不需要为它生成任何封送代码；
+    /// 二是字符串生存期变成显式可见的（调用方自己 StringToHGlobalUni / FreeHGlobal），
+    /// 不会出现「封送器每次调用偷偷分配一份」这种看不见的开销。
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
     public struct WndClassEx
     {
         public uint CbSize;
@@ -200,19 +223,19 @@ internal static class PowerNative
         public IntPtr HIcon;
         public IntPtr HCursor;
         public IntPtr HbrBackground;
-        public string? LpszMenuName;
-        public string LpszClassName;
+        public IntPtr LpszMenuName;
+        public IntPtr LpszClassName;
         public IntPtr HIconSm;
     }
 
     /// <summary>HWND_MESSAGE：创建一个只收消息、不可见的 message-only 窗口。</summary>
     public static readonly IntPtr HwndMessage = new(-3);
 
-    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    public static extern ushort RegisterClassExW(ref WndClassEx lpwcx);
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial ushort RegisterClassExW(ref WndClassEx lpwcx);
 
-    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
-    public static extern IntPtr CreateWindowExW(
+    [LibraryImport("user32.dll", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+    public static partial IntPtr CreateWindowExW(
         uint dwExStyle,
         string lpClassName,
         string? lpWindowName,
@@ -223,34 +246,34 @@ internal static class PowerNative
         IntPtr hInstance,
         IntPtr lpParam);
 
-    [DllImport("user32.dll", SetLastError = true)]
+    [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool DestroyWindow(IntPtr hWnd);
+    public static partial bool DestroyWindow(IntPtr hWnd);
 
-    [DllImport("user32.dll")]
-    public static extern IntPtr DefWindowProcW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+    [LibraryImport("user32.dll")]
+    public static partial IntPtr DefWindowProcW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
-    [DllImport("user32.dll")]
+    [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool GetMessageW(out Msg lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+    public static partial bool GetMessageW(out Msg lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
 
-    [DllImport("user32.dll")]
+    [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool TranslateMessage(ref Msg lpMsg);
+    public static partial bool TranslateMessage(ref Msg lpMsg);
 
-    [DllImport("user32.dll")]
-    public static extern IntPtr DispatchMessageW(ref Msg lpMsg);
+    [LibraryImport("user32.dll")]
+    public static partial IntPtr DispatchMessageW(ref Msg lpMsg);
 
-    [DllImport("user32.dll")]
+    [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool PostMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+    public static partial bool PostMessageW(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
-    [DllImport("user32.dll")]
+    [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool PostThreadMessageW(uint idThread, uint msg, IntPtr wParam, IntPtr lParam);
+    public static partial bool PostThreadMessageW(uint idThread, uint msg, IntPtr wParam, IntPtr lParam);
 
-    [DllImport("user32.dll")]
-    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+    [LibraryImport("user32.dll")]
+    public static partial uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
 
     [StructLayout(LayoutKind.Sequential)]
     public struct Msg
@@ -275,9 +298,9 @@ internal static class PowerNative
 
     // ---------- 壳通知（托盘图标弹气泡用，可选） ----------
 
-    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
-    public static extern IntPtr GetModuleHandleW(string? lpModuleName);
+    [LibraryImport("kernel32.dll", StringMarshalling = StringMarshalling.Utf16)]
+    public static partial IntPtr GetModuleHandleW(string? lpModuleName);
 
-    [DllImport("kernel32.dll")]
-    public static extern uint GetCurrentThreadId();
+    [LibraryImport("kernel32.dll")]
+    public static partial uint GetCurrentThreadId();
 }

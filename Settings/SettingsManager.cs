@@ -10,11 +10,6 @@ public static class SettingsManager
 
     private static readonly string FilePath = Path.Combine(Folder, "settings.json");
 
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-    };
-
     public static AppSettings Load()
     {
         try
@@ -23,7 +18,8 @@ public static class SettingsManager
                 return new AppSettings();
 
             var json = File.ReadAllText(FilePath);
-            return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+            return JsonSerializer.Deserialize(json, SettingsJsonContext.Default.AppSettings)
+                   ?? new AppSettings();
         }
         catch
         {
@@ -36,7 +32,7 @@ public static class SettingsManager
         try
         {
             Directory.CreateDirectory(Folder);
-            var json = JsonSerializer.Serialize(settings, JsonOptions);
+            var json = JsonSerializer.Serialize(settings, SettingsJsonContext.Default.AppSettings);
             File.WriteAllText(FilePath, json);
         }
         catch

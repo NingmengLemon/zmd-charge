@@ -25,6 +25,11 @@
     <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
     <RuntimeIdentifier Condition="'$(Configuration)'=='Release'">win-x64</RuntimeIdentifier>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+
+    <!-- Services/PowerNative.cs 用 [LibraryImport]，它的源生成器会产出 unsafe 代码
+         （SYSLIB1062 明确要求打开这个开关）。只给需要它的主工程开，不放共享属性里，
+         免得测试工程也白白获得 unsafe 许可。我们自己不写 unsafe 代码。 -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <!-- ============================================================

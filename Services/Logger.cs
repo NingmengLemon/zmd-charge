@@ -29,6 +29,17 @@ public static class Logger
     /// <summary>记录异常：带完整堆栈，否则崩溃日志基本没法定位。</summary>
     public static void Error(Exception ex) => Write("ERROR", ex.ToString());
 
+    /// <summary>
+    /// 只在进程内第一次调用时记一条。用于「会被高频轮询反复触发的失败路径」：
+    /// 每次都记会迅速把日志刷到上限、把真正有用的信息挤掉；完全不记又会把问题藏起来。
+    /// flag 由调用方持有（通常是一个 private static int 字段）。
+    /// </summary>
+    public static void Once(ref int flag, string msg)
+    {
+        if (Interlocked.Exchange(ref flag, 1) == 0)
+            Write("WARN", msg);
+    }
+
     private static void Write(string level, string msg)
     {
         if (!Enabled)
