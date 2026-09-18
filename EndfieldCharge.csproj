@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
@@ -16,6 +16,8 @@
     <Company>Lenkmat</Company>
     <Copyright>Copyright © 2026 Lenkmat</Copyright>
     <PlatformTarget>x64</PlatformTarget>
+    <!-- 本地构建与 CI 用同一道闸门：警告即错误。CI 里不再单独传参，避免两处不一致 -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <!-- 单文件发布，方便丢进开机启动 -->
     <PublishSingleFile Condition="'$(Configuration)'=='Release'">true</PublishSingleFile>
     <SelfContained Condition="'$(Configuration)'=='Release'">false</SelfContained>
@@ -26,6 +28,23 @@
     <RuntimeIdentifier Condition="'$(Configuration)'=='Release'">win-x64</RuntimeIdentifier>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
+
+  <!-- ============================================================
+       「检查更新」与安装器指向哪个仓库。
+       CI 用 github.repository 覆盖（见 .github/workflows/build.yml），
+       所以任何 fork 的 CI 产物都会查自己的 Release；
+       本地构建（含 fork 后未改 CI）退回本仓库，不会指到别人的 fork。
+       ============================================================ -->
+  <PropertyGroup>
+    <UpdateRepoOwner Condition="'$(UpdateRepoOwner)' == ''">NingmengLemon</UpdateRepoOwner>
+    <UpdateRepoName Condition="'$(UpdateRepoName)' == ''">zmd-charge</UpdateRepoName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 编译期写入程序集元数据，运行时由 UpdateChecker 读取 -->
+    <AssemblyMetadata Include="UpdateRepoOwner" Value="$(UpdateRepoOwner)" />
+    <AssemblyMetadata Include="UpdateRepoName" Value="$(UpdateRepoName)" />
+  </ItemGroup>
 
   <ItemGroup>
     <PackageReference Include="Avalonia" Version="11.2.1" />
@@ -38,6 +57,18 @@
 
   <ItemGroup>
     <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- tests/ 位于本项目目录树内，SDK 默认 glob 会把测试代码一起编进主程序，必须排除 -->
+    <Compile Remove="tests\**" />
+    <None Remove="tests\**" />
+    <EmbeddedResource Remove="tests\**" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- 测试工程要直接验证 MapCue / 版本解析这类纯逻辑 -->
+    <InternalsVisibleTo Include="EndfieldCharge.Tests" />
   </ItemGroup>
 
 </Project>

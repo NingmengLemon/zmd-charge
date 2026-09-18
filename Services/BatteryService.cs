@@ -12,20 +12,6 @@ public sealed record BatterySnapshot(
     bool AcOnline,
     bool Charging)
 {
-    /// <summary>充/放电功率（瓦）。正=充电，负=放电；未知为 null。</summary>
-    public double? RateWatts { get; init; }
-
-    /// <summary>设计容量（mWh），用于计算健康度。</summary>
-    public double? DesignCapacityWh { get; init; }
-
-    /// <summary>电池健康度百分比（当前满充容量 / 设计容量）。</summary>
-    public double? HealthPercent => DesignCapacityWh.HasValue && DesignCapacityWh.Value > 0
-        ? Math.Round(FullWh / DesignCapacityWh.Value * 100, 1)
-        : null;
-
-    /// <summary>剩余时间估计；未知为 null。</summary>
-    public TimeSpan? EstimatedRemaining { get; init; }
-
     public bool HasBattery => FullWh > 0;
 }
 
@@ -44,6 +30,18 @@ public static class BatteryService
         return TryFromWmi();
     }
 
+    /// <summary>
+    /// 剩余百分比。用容量比而不是 EstimatedChargeRemaining，后者常为整数跳变。
+    /// 抽出来是为了能脱离 Windows API 单测（见 tests/EndfieldCharge.Tests）。
+    /// </summary>
+    internal static int ComputePercent(double remainingWh, double fullWh)
+    {
+        if (fullWh <= 0)
+            return 0;
+
+        return Math.Clamp((int)Math.Round(remainingWh / fullWh * 100.0), 0, 100);
+    }
+
     private static bool TryFromPowerProf(out BatterySnapshot? snapshot)
     {
         snapshot = null;
@@ -57,25 +55,23 @@ public static class BatteryService
         double fullWh = s.MaxCapacity / 1000.0;
         double remainingWh = s.RemainingCapacity / 1000.0;
 
-        // 百分比直接用容量比算，比 EstimatedChargeRemaining 更连续（后者常为整数跳变）
-        int percent = (int)Math.Round(remainingWh / fullWh * 100.0);
-        percent = Math.Clamp(percent, 0, 100);
-
         snapshot = new BatterySnapshot(
             RemainingWh: remainingWh,
             FullWh: fullWh,
-            Percent: percent,
+            Percent: ComputePercent(remainingWh, fullWh),
+            // powrprof 的 Charging 语义是"正在充"（接电但已充满/未充时为 0），
+            // 与 AcOnline 严格区分；提醒逻辑依赖这个区别。
             AcOnline: s.AcOnLine != 0,
-            Charging: s.Charging != 0)
-        {
-            RateWatts = s.Rate == 0 ? null : s.Rate / 1000.0,
-            EstimatedRemaining = s.EstimatedTime is 0 or 0x80000000
-                ? null
-                : TimeSpan.FromSeconds(s.EstimatedTime),
-            // powrprof 不提供设计容量，健康度仅 WMI 路径可读
-        };
+            Charging: s.Charging != 0);
         return true;
     }
+
+    // Win32_Battery.BatteryStatus 取值（WMI 文档）：
+    //   1 放电 | 2 接 AC 但不一定在充 | 3 已充满 | 4 低 | 5 危急
+    //   6 充电中 | 7 充电且高 | 8 充电且低 | 9 充电且危急 | 10 未定义 | 11 部分充电
+    // internal 以便单测：status=2/3/11 是"接了电但没在充"，不能被当成 Charging。
+    internal static bool IsAcOnline(ushort status) => status is 2 or 3 or 6 or 7 or 8 or 9 or 11;
+    internal static bool IsCharging(ushort status) => status is 6 or 7 or 8 or 9;
 
     private static BatterySnapshot? TryFromWmi()
     {
@@ -88,29 +84,25 @@ public static class BatteryService
             foreach (ManagementObject mo in searcher.Get())
             {
                 int? pct = ReadUInt16(mo["EstimatedChargeRemaining"]);
-                uint? fullMwh = ReadUInt32(mo["FullChargeCapacity"]) ?? ReadUInt32(mo["DesignCapacity"]);
-                uint? designMwh = ReadUInt32(mo["DesignCapacity"]);
+                // 0 与"读不到"等价：部分机型 FullChargeCapacity 存在但为 0，
+                // 必须先归一成 null，否则 ?? 不会回退到 DesignCapacity。
+                uint? fullMwh = NonZero(ReadUInt32(mo["FullChargeCapacity"]))
+                                ?? NonZero(ReadUInt32(mo["DesignCapacity"]));
 
-                if (pct is null || fullMwh is 0 or null)
+                if (pct is null || fullMwh is null)
                     continue;
 
                 double fullWh = fullMwh.Value / 1000.0;
                 double remainingWh = fullWh * pct.Value / 100.0;
 
-                // BatteryStatus: 2 = 正在充电, 1 = 放电, 其他见 WMI 文档
                 ushort status = ReadUInt16(mo["BatteryStatus"]) ?? 0;
 
                 return new BatterySnapshot(
                     RemainingWh: remainingWh,
                     FullWh: fullWh,
                     Percent: Math.Clamp(pct.Value, 0, 100),
-                    AcOnline: status is 2 or 6 or 7 or 8 or 9,
-                    Charging: status is 2 or 6 or 7 or 8 or 9)
-                {
-                    DesignCapacityWh = designMwh.HasValue && designMwh > 0
-                        ? designMwh.Value / 1000.0
-                        : null,
-                };
+                    AcOnline: IsAcOnline(status),
+                    Charging: IsCharging(status));
             }
         }
         catch
@@ -122,5 +114,6 @@ public static class BatteryService
 
         static ushort? ReadUInt16(object? v) => v is null ? null : Convert.ToUInt16(v);
         static uint? ReadUInt32(object? v) => v is null ? null : Convert.ToUInt32(v);
+        static uint? NonZero(uint? v) => v is > 0 ? v : null;
     }
 }

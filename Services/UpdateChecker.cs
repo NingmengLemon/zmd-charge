@@ -1,5 +1,6 @@
 using System;
 using System.Net.Http;
+using System.Reflection;
 using System.Text.Json;
 using System.Threading.Tasks;
 
@@ -7,13 +8,34 @@ namespace EndfieldCharge.Services;
 
 public static class UpdateChecker
 {
-    private const string ReleasesUrl = "https://api.github.com/repos/{owner}/{repo}/releases/latest";
+    /// <summary>
+    /// 目标仓库由编译期元数据决定（csproj 的 UpdateRepoOwner / UpdateRepoName，
+    /// CI 用 github.repository 注入）。本地构建退回 csproj 里的默认值。
+    /// </summary>
+    private static readonly string RepoOwner = ReadMetadata("UpdateRepoOwner", "NingmengLemon");
+    private static readonly string RepoName = ReadMetadata("UpdateRepoName", "zmd-charge");
+
+    private static readonly string ReleasesUrl =
+        $"https://api.github.com/repos/{RepoOwner}/{RepoName}/releases/latest";
+
     private static readonly HttpClient Client = new();
 
     static UpdateChecker()
     {
-        Client.DefaultRequestHeaders.UserAgent.ParseAdd("EndfieldCharge/1.0");
+        var version = Assembly.GetExecutingAssembly().GetName().Version?.ToString(3) ?? "0.0.0";
+        Client.DefaultRequestHeaders.UserAgent.ParseAdd($"EndfieldCharge/{version}");
         Client.Timeout = TimeSpan.FromSeconds(8);
+    }
+
+    private static string ReadMetadata(string key, string fallback)
+    {
+        foreach (var attr in Assembly.GetExecutingAssembly()
+                     .GetCustomAttributes<AssemblyMetadataAttribute>())
+        {
+            if (attr.Key == key && !string.IsNullOrWhiteSpace(attr.Value))
+                return attr.Value!;
+        }
+        return fallback;
     }
 
     /// <summary>
@@ -23,12 +45,7 @@ public static class UpdateChecker
     /// </summary>
     public static async Task<(bool HasUpdate, string? Version, string? Url)> CheckAsync()
     {
-        // 替换为实际的 owner/repo
-        var url = ReleasesUrl
-            .Replace("{owner}", "Lenkmat")
-            .Replace("{repo}", "endfield-charge");
-
-        var response = await Client.GetAsync(url);
+        using var response = await Client.GetAsync(ReleasesUrl);
         response.EnsureSuccessStatusCode();
 
         var json = await response.Content.ReadAsStringAsync();
@@ -36,7 +53,7 @@ public static class UpdateChecker
         var root = doc.RootElement;
 
         var tag = root.GetProperty("tag_name").GetString() ?? "0.0.0";
-        var current = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        var current = Assembly.GetExecutingAssembly().GetName().Version;
         var latest = ParseVersion(tag);
 
         var hasUpdate = latest is not null && current is not null && latest > current;
@@ -51,7 +68,8 @@ public static class UpdateChecker
         return (hasUpdate, display, downloadUrl);
     }
 
-    private static Version? ParseVersion(string tag)
+    /// <summary>把 tag（v1.2.3 / 1.2.3-dev）解析成可比较的 Version；解析不出返回 null。</summary>
+    internal static Version? ParseVersion(string tag)
     {
         var v = tag.TrimStart('v');
         var parts = v.Split('-')[0].Split('.');

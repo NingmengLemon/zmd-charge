@@ -19,31 +19,53 @@ jobs:
     steps:
     - name: Checkout
       uses: actions/checkout@v4
+      with:
+        # 需要完整 tag 历史：主干构建用 `git describe --tags --abbrev=0` 取最近 tag 作版本基线
+        fetch-depth: 0
 
     - name: Setup .NET
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: '8.0.x'
 
-    # ---- 版本号：tag 用 tag 名，否则用 0.0.<run_number> ----
-    # 必须在 build 之前解析：程序集版本参与编译，应用内「检查更新」靠它比较
-    - name: Resolve version
+    # ---- 版本号与更新源 ----
+    # 版本号必须在 build 之前解析：程序集版本参与编译，应用内「检查更新」靠它比较。
+    #   tag 构建   : 1.1.1
+    #   主干构建   : <最近 tag>.<run_number>，例如 1.1.1.500
+    #                第 4 段让主干构建"比同名 tag 新"，否则 0.0.N < 1.1.1 会让
+    #                应用一直提示更新、并把用户带到比当前代码更旧的发布版。
+    # 更新源用 github.repository，任何 fork 的 CI 产物都查自己的 Release。
+    - name: Resolve version and update source
       id: ver
       shell: pwsh
       run: |
         if ($env:GITHUB_REF -like 'refs/tags/v*') {
           $v = $env:GITHUB_REF -replace 'refs/tags/v', ''
         } else {
-          $v = "0.0.$env:GITHUB_RUN_NUMBER"
+          $last = git describe --tags --abbrev=0 2>$null
+          if ($LASTEXITCODE -eq 0 -and $last) {
+            $base = ($last -replace '^v', '') -replace '-.*$', ''
+            $v = $base + "." + $env:GITHUB_RUN_NUMBER
+          } else {
+            $v = "0.0." + $env:GITHUB_RUN_NUMBER
+          }
         }
+        $owner, $repo = $env:GITHUB_REPOSITORY -split '/', 2
         "version=$v" >> $env:GITHUB_OUTPUT
-        Write-Host "Version: $v"
+        "owner=$owner"   >> $env:GITHUB_OUTPUT
+        "repo=$repo"     >> $env:GITHUB_OUTPUT
+        Write-Host "Version: $v   Update source: $owner/$repo"
 
     - name: Restore
       run: dotnet restore
 
     - name: Build (Release)
-      run: dotnet build -c Release --no-restore /p:TreatWarningsAsErrors=true /p:Version=${{ steps.ver.outputs.version }}
+      run: dotnet build -c Release --no-restore /p:Version=${{ steps.ver.outputs.version }} /p:UpdateRepoOwner=${{ steps.ver.outputs.owner }} /p:UpdateRepoName=${{ steps.ver.outputs.repo }}
+
+    # 纯逻辑单元测试。用 Debug（主干项目只在 Release 设 RID），
+    # 避免覆盖上面 Release 的输出、影响后面 --no-build 的 publish。
+    - name: Test
+      run: dotnet test tests\EndfieldCharge.Tests -c Debug
 
     - name: Publish single-file
       run: dotnet publish -c Release -o publish --no-build
@@ -53,9 +75,12 @@ jobs:
       run: |
         $v = "${{ steps.ver.outputs.version }}"
         $p = "installer\EndfieldCharge.iss"
-        (Get-Content $p) -replace '#define MyAppVersion ".*"', "#define MyAppVersion `"$v`"" |
+        $url = "https://github.com/${{ steps.ver.outputs.owner }}/${{ steps.ver.outputs.repo }}"
+        (Get-Content $p) `
+          -replace '#define MyAppVersion ".*"', "#define MyAppVersion `"$v`"" `
+          -replace '#define MyAppURL ".*"', "#define MyAppURL `"$url`"" |
           Set-Content $p -Encoding UTF8
-        Write-Host (Select-String -Path $p -Pattern 'MyAppVersion ')
+        Select-String -Path $p -Pattern 'MyAppVersion |MyAppURL '
 
     - name: Create portable zip
       shell: pwsh

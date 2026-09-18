@@ -5,8 +5,12 @@
 #define MyAppName "EndfieldCharge"
 #define MyAppVersion "0.0.0"
 #define MyAppPublisher "Lenkmat"
-#define MyAppURL "https://github.com/Lenkmat/endfield-charge"
+; CI 会用 github.repository 覆盖（见 .github/workflows/build.yml），本地打包退回本仓库
+#define MyAppURL "https://github.com/NingmengLemon/zmd-charge"
 #define MyAppExeName "EndfieldCharge.exe"
+; 与 Program.cs 里的单实例互斥体同名。Inno 默认在调用者所在会话命名空间里查找，
+; 与程序创建的 Local\ 互斥体是同一个对象，因此这里写不带前缀的名字即可。
+#define MyAppMutex "EndfieldCharge_SingleInstance_7C1D"
 
 [Setup]
 AppId={{6B6BD34B-6E4D-490C-A8AE-62963965257A}
@@ -36,6 +40,8 @@ UninstallDisplayIcon={app}\{#MyAppExeName}
 ; 默认当前用户安装（不强制管理员），用户可在安装时选择提升权限
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
+; 程序在跑时先请它退出，避免覆盖文件失败
+AppMutex={#MyAppMutex}
 
 [Languages]
 ; 中文语言文件不属于 Inno Setup 官方默认安装（在官方仓库的 Languages 目录），
@@ -65,6 +71,11 @@ Name: "{autodesktop}\{#MyAppName}";        Filename: "{app}\{#MyAppExeName}"; Ta
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
     ValueType: string; ValueName: "{#MyAppName}"; ValueData: """{app}\{#MyAppExeName}"""; \
     Flags: uninsdeletevalue; Tasks: startup
+; 用户没勾选安装器里的自启、但后来在程序内打开了自启时，卸载也要清掉同一个值。
+; dontcreatekey 保证安装时不写任何东西，uninsdeletevalue 负责登记卸载动作。
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
+    ValueType: string; ValueName: "{#MyAppName}"; ValueData: ""; \
+    Flags: dontcreatekey uninsdeletevalue; Tasks: not startup
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "立即启动 {#MyAppName}"; \
