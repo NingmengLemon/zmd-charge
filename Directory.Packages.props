@@ -25,9 +25,11 @@
   </ItemGroup>
 
   <ItemGroup Label="测试">
-    <PackageVersion Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
-    <PackageVersion Include="xunit" Version="2.9.2" />
-    <PackageVersion Include="xunit.runner.visualstudio" Version="2.8.2" />
+    <!-- xunit v3：测试工程本身是可执行程序，跑测试不再需要外部 runner。
+         Microsoft.Testing.Platform 由 xunit.v3 传递引入，所以不再需要 Microsoft.NET.Test.Sdk。
+         xunit.runner.visualstudio 是给 IDE（VS / Rider）做发现用的，4.x 才支持 v3。 -->
+    <PackageVersion Include="xunit.v3" Version="4.0.1" />
+    <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.0" />
   </ItemGroup>
 
 </Project>

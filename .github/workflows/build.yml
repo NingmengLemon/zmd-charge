@@ -70,8 +70,10 @@ jobs:
 
     # 纯逻辑单元测试。用 Debug（主干项目只在 Release 设 RID），
     # 避免覆盖上面 Release 的输出、影响后面 --no-build 的 publish。
+    # xunit v3 走 Microsoft.Testing.Platform（见 global.json 的 test.runner），
+    # 这个模式下必须用 --project 指定工程，不能像 VSTest 模式那样直接传路径。
     - name: Test
-      run: dotnet test tests\EndfieldCharge.Tests -c Debug
+      run: dotnet test --project tests\EndfieldCharge.Tests -c Debug
 
     - name: Publish single-file
       run: dotnet publish -c Release -o publish --no-build

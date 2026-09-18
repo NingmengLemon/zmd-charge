@@ -4,14 +4,15 @@
        TreatWarningsAsErrors 都在根目录的 Directory.Build.props 里 -->
 
   <PropertyGroup>
+    <!-- xunit v3 的测试工程是可执行程序：编译产物自己就能跑测试 -->
+    <OutputType>Exe</OutputType>
     <IsPackable>false</IsPackable>
     <RootNamespace>EndfieldCharge.Tests</RootNamespace>
   </PropertyGroup>
 
   <!-- 版本号统一由 Directory.Packages.props 管理 -->
   <ItemGroup>
-    <PackageReference Include="Microsoft.NET.Test.Sdk" />
-    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.v3" />
     <PackageReference Include="xunit.runner.visualstudio" />
   </ItemGroup>
 
