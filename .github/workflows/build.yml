@@ -112,9 +112,10 @@ jobs:
         if-no-files-found: error
 
     # 只有推送 v* 标签才发 Release（标签由维护者手动创建）
+    # v3 起运行时是 Node 24；v2 线仍跑在已弃用的 Node 20 上（runner 会给出 deprecation 警告）
     - name: Create GitHub Release
       if: startsWith(github.ref, 'refs/tags/v')
-      uses: softprops/action-gh-release@v2
+      uses: softprops/action-gh-release@v3
       with:
         name: EndfieldCharge ${{ steps.ver.outputs.version }}
         generate_release_notes: true
