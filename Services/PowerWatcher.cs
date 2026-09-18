@@ -42,8 +42,12 @@ public sealed class PowerWatcher : IDisposable
     private static readonly TimeSpan ChangeConfirmDelay = TimeSpan.FromMilliseconds(400);
 
     private readonly PowerNative.WndProcDelegate _wndProc;
-    private Thread? _thread;
-    private uint _threadId;
+
+    /// <summary>状态串行化：消息窗线程（WndProc）与轮询 Timer 线程都会读写下面的状态。</summary>
+    private readonly object _gate = new();
+
+    private volatile Thread? _thread;
+    private volatile uint _threadId;
     private IntPtr _hwnd;
     private IntPtr _acdcNotify;
     private IntPtr _saverNotify;
@@ -146,12 +150,18 @@ public sealed class PowerWatcher : IDisposable
         // 看起来就像发生了一次状态变化 → 误触 HUD。
         if (PowerNative.TryGetAcOnline(out bool ac))
         {
-            _lastAcOnline = ac;
-            _initialized = true;
+            lock (_gate)
+            {
+                _lastAcOnline = ac;
+                _initialized = true;
+            }
         }
         if (PowerNative.TryGetPowerSavingStatus(out bool saver))
         {
-            _lastSaverEnabled = saver;
+            lock (_gate)
+            {
+                _lastSaverEnabled = saver;
+            }
             Logger.Info($"PowerWatcher: initial saver={saver}");
         }
 
@@ -205,25 +215,38 @@ public sealed class PowerWatcher : IDisposable
 
     private void RaiseIfChanged(bool acOnline)
     {
-        TraceEvent($"RaiseIfChanged(ac={acOnline}), last={_lastAcOnline}, init={_initialized}");
+        bool? previous = null;
+        bool? traceLast;
+        bool traceInit;
+        bool raise = false;
+        int seq = 0;
 
-        // 第一次读到真实状态前，所有事件都吞掉，避免把"未知"误当 DC →
-        // 随后读到真实 AC 时被当成状态变化。
-        if (!_initialized)
+        lock (_gate)
         {
-            _lastAcOnline = acOnline;
-            _initialized = true;
-            return;
+            traceLast = _lastAcOnline;
+            traceInit = _initialized;
+
+            // 第一次读到真实状态前，所有事件都吞掉，避免把"未知"误当 DC →
+            // 随后读到真实 AC 时被当成状态变化。
+            if (!_initialized)
+            {
+                _lastAcOnline = acOnline;
+                _initialized = true;
+            }
+            else if (_lastAcOnline != acOnline)
+            {
+                previous = _lastAcOnline;
+                _lastAcOnline = acOnline;
+                seq = ++_confirmSeq;
+                raise = true;
+            }
         }
 
-        if (_lastAcOnline == acOnline)
-            return;
-
-        var previous = _lastAcOnline;
-        _lastAcOnline = acOnline;
+        TraceEvent($"RaiseIfChanged(ac={acOnline}), last={traceLast}, init={traceInit}");
 
         // 两个方向的变化都延迟复读一次，滤掉电源状态的瞬时抖动
-        _ = ConfirmChangeAsync(previous, acOnline, ++_confirmSeq);
+        if (raise)
+            _ = ConfirmChangeAsync(previous, acOnline, seq);
     }
 
     private async Task ConfirmChangeAsync(bool? previous, bool candidate, int seq)
@@ -237,18 +260,21 @@ public sealed class PowerWatcher : IDisposable
             return;
         }
 
-        // 期间又有更新的变化，或正在停止 → 本次确认作废
-        if (_stopping || seq != _confirmSeq)
+        if (_stopping || !PowerNative.TryGetAcOnline(out bool current))
             return;
 
-        if (!PowerNative.TryGetAcOnline(out bool current))
-            return;
-
-        if (current != candidate)
+        lock (_gate)
         {
-            // 抖动：回滚，避免后续读回真实值时被当成又一次变化
-            _lastAcOnline = previous;
-            return;
+            // 期间又有更新的变化 → 本次确认作废
+            if (seq != _confirmSeq)
+                return;
+
+            if (current != candidate)
+            {
+                // 抖动：回滚，避免后续读回真实值时被当成又一次变化
+                _lastAcOnline = previous;
+                return;
+            }
         }
 
         // 两个方向都上报，由订阅方决定弹什么（插电=完整三态，拔电=简化电量胶囊）
@@ -261,32 +287,49 @@ public sealed class PowerWatcher : IDisposable
     /// </summary>
     private void RaiseSaverIfChanged(bool enabled)
     {
-        // 第一次读到真实状态前只记录，不上报（启动时已开省电不弹）
-        if (_lastSaverEnabled is null)
+        bool raise = false;
+
+        lock (_gate)
         {
-            _lastSaverEnabled = enabled;
-            return;
+            // 第一次读到真实状态前只记录，不上报（启动时已开省电不弹）
+            if (_lastSaverEnabled is null)
+            {
+                _lastSaverEnabled = enabled;
+            }
+            else if (_lastSaverEnabled != enabled)
+            {
+                _lastSaverEnabled = enabled;
+                raise = true;
+            }
         }
 
-        if (_lastSaverEnabled == enabled)
+        if (!raise)
             return;
 
-        _lastSaverEnabled = enabled;
         TraceEvent($"PowerSavingChanged(enabled={enabled})");
-        Logger.Info($"PowerWatcher: power saving { (enabled ? "ON" : "OFF") }");
+        Logger.Info($"PowerWatcher: power saving {(enabled ? "ON" : "OFF")}");
         PowerSavingChanged?.Invoke(this, enabled);
     }
 
-    [System.Diagnostics.Conditional("DEBUG")]
+    /// <summary>--power-log 开关。启动时解析一次，Release 构建同样生效。</summary>
+    private static readonly bool PowerLogEnabled =
+        Array.Exists(Environment.GetCommandLineArgs(), a => a == "--power-log");
+
+    /// <summary>电源事件日志的字节上限，超过后停止追加，避免长时间挂机写满磁盘。</summary>
+    private const long PowerLogMaxBytes = 2 * 1024 * 1024;
+
     private static void TraceEvent(string msg)
     {
-        if (!Array.Exists(Environment.GetCommandLineArgs(), a => a == "--power-log"))
+        if (!PowerLogEnabled)
             return;
         try
         {
-            File.AppendAllText(
-                Path.Combine(Path.GetTempPath(), "power-log.txt"),
-                $"[{DateTime.Now:HH:mm:ss.fff}] {msg}\n");
+            var path = Path.Combine(Path.GetTempPath(), "power-log.txt");
+            var info = new FileInfo(path);
+            if (info.Exists && info.Length > PowerLogMaxBytes)
+                return;
+
+            File.AppendAllText(path, $"[{DateTime.Now:HH:mm:ss.fff}] {msg}\n");
         }
         catch
         {
