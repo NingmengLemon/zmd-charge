@@ -403,14 +403,14 @@ public partial class SettingsWindow : Window
             var (hasUpdate, version, url) = await Services.UpdateChecker.CheckAsync();
             if (hasUpdate && url is not null)
             {
-                var result = await MessageBox.Show(
+                var result = await MessageBoxWindow.ShowAsync(
                     this,
                     Localization.UpdateMsg(version ?? "?"),
                     Localization.UpdateTitle,
                     MessageBoxButton.OkCancel);
 
                 if (result == MessageBoxResult.Ok)
-                    Platform.Start(url);
+                    UrlLauncher.Open(url);
             }
             else
             {
@@ -439,7 +439,7 @@ public partial class SettingsWindow : Window
 
         try
         {
-            Platform.Start(fontUrl);
+            UrlLauncher.Open(fontUrl);
             await Task.Delay(500);
             FontStatusText.Text = Localization.FontInstalled;
         }
@@ -451,98 +451,5 @@ public partial class SettingsWindow : Window
         {
             FontInstallBtn.IsEnabled = true;
         }
-    }
-}
-
-// 极简消息框辅助
-public enum MessageBoxButton { Ok, OkCancel }
-public enum MessageBoxResult { Ok, Cancel }
-
-public static class MessageBox
-{
-    public static async Task<MessageBoxResult> Show(
-        Window owner, string message, string title,
-        MessageBoxButton button = MessageBoxButton.Ok)
-    {
-        var dialog = new Window
-        {
-            Title = title,
-            Width = 380,
-            Height = 180,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Background = new SolidColorBrush(Color.Parse("#1E1E1E")),
-            Foreground = Brushes.White,
-            CanResize = false,
-            WindowDecorations = WindowDecorations.None,
-            FontFamily = new FontFamily("HarmonyOS Sans SC, HarmonyOS Sans, Inter, Microsoft YaHei UI, sans-serif"),
-        };
-
-        var result = MessageBoxResult.Ok;
-        var stack = new StackPanel { Margin = new Thickness(20), Spacing = 16 };
-        stack.Children.Add(new TextBlock
-        {
-            Text = message,
-            TextWrapping = TextWrapping.Wrap,
-            FontSize = 14,
-            VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,
-        });
-
-        var btnPanel = new StackPanel
-        {
-            Orientation = Avalonia.Layout.Orientation.Horizontal,
-            HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Right,
-            Spacing = 8,
-        };
-
-        var okBtn = new Button
-        {
-            Content = Localization.BtnDownload,
-            Width = 80, Height = 32,
-            Background = new SolidColorBrush(Color.Parse("#C6CA4C")),
-            Foreground = new SolidColorBrush(Color.Parse("#1E1E1E")),
-            FontWeight = FontWeight.SemiBold,
-            CornerRadius = new CornerRadius(6),
-            HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-            VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
-        };
-        okBtn.Click += (_, _) => { result = MessageBoxResult.Ok; dialog.Close(); };
-        btnPanel.Children.Add(okBtn);
-
-        if (button == MessageBoxButton.OkCancel)
-        {
-            var cancelBtn = new Button
-            {
-                Content = Localization.BtnCancel,
-                Width = 80, Height = 32,
-                CornerRadius = new CornerRadius(6),
-                HorizontalContentAlignment = Avalonia.Layout.HorizontalAlignment.Center,
-                VerticalContentAlignment = Avalonia.Layout.VerticalAlignment.Center,
-            };
-            cancelBtn.Click += (_, _) => { result = MessageBoxResult.Cancel; dialog.Close(); };
-            btnPanel.Children.Insert(0, cancelBtn);
-        }
-
-        stack.Children.Add(btnPanel);
-        dialog.Content = stack;
-        dialog.WindowStartupLocation = WindowStartupLocation.CenterOwner;
-
-        await dialog.ShowDialog(owner);
-        return result;
-    }
-}
-
-internal static class Platform
-{
-    public static void Start(string url)
-    {
-        using var p = new System.Diagnostics.Process
-        {
-            StartInfo = new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = url,
-                UseShellExecute = true,
-            },
-        };
-        p.Start();
     }
 }

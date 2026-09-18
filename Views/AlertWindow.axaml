@@ -1,0 +1,31 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="340" d:DesignHeight="140"
+        x:Class="EndfieldCharge.Views.AlertWindow"
+        Title="EndfieldCharge"
+        Width="340" Height="140"
+        CanResize="False"
+        Topmost="True"
+        WindowDecorations="BorderOnly"
+        WindowStartupLocation="CenterScreen"
+        Background="{StaticResource Dialog.Window}"
+        Foreground="White"
+        FontFamily="{StaticResource Hud.FontFamily}">
+
+  <!-- 卡牌风格提醒：外层窗口底色 + 内层卡片。文案由 AlertWindow.ShowAsync 注入。 -->
+  <Border Background="{StaticResource Dialog.Card}"
+          CornerRadius="10"
+          Margin="12"
+          Padding="18,16">
+    <StackPanel Spacing="10">
+      <TextBlock x:Name="TitleText"
+                 FontSize="15" FontWeight="SemiBold"
+                 Foreground="{StaticResource Hud.Accent}"/>
+      <TextBlock x:Name="MessageText"
+                 FontSize="13" TextWrapping="Wrap"
+                 Foreground="{StaticResource Dialog.Body}"/>
+    </StackPanel>
+  </Border>
+</Window>

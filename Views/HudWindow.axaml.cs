@@ -6,6 +6,7 @@ using Avalonia.Animation.Easings;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Platform;
 using Avalonia.Rendering;
 using Avalonia.Styling;
 using Avalonia.Threading;
@@ -425,7 +426,7 @@ public partial class HudWindow : Window
     /// <summary>
     /// 解析目标显示器：-1 = 主显示器（默认），0..N-1 = 显示器列表索引，越界退回主显示器。
     /// </summary>
-    private Avalonia.Platform.Screen? ResolveScreen(int monitorIndex)
+    private Screen? ResolveScreen(int monitorIndex)
     {
         var screens = Screens.All;
         var primary = Screens.Primary;
@@ -441,7 +442,7 @@ public partial class HudWindow : Window
 
     /// <summary>Screens.All 是 IReadOnlyList，直接取下标即可；
     /// 用 FirstOrDefault 会白走一遍枚举器（CA1826）。</summary>
-    private static Avalonia.Platform.Screen? FirstScreen(IReadOnlyList<Avalonia.Platform.Screen> screens)
+    private static Screen? FirstScreen(IReadOnlyList<Screen> screens)
         => screens.Count > 0 ? screens[0] : null;
 
     private void ShowPositioned()

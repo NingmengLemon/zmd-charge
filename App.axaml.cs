@@ -260,93 +260,12 @@ public partial class App : Application
         switch (kind)
         {
             case AlertKind.FullCharge:
-                _ = ShowAlertAsync(Localization.FullChargeTitle, Localization.FullChargeMsg);
+                _ = AlertWindow.ShowAsync(Localization.FullChargeTitle, Localization.FullChargeMsg);
                 break;
             case AlertKind.LowBattery:
-                _ = ShowAlertAsync(Localization.LowBatteryTitle, Localization.LowBatteryMsg(snap.Percent));
+                _ = AlertWindow.ShowAsync(Localization.LowBatteryTitle, Localization.LowBatteryMsg(snap.Percent));
                 break;
         }
-    }
-
-    /// <summary>弹出一个卡牌风格提醒窗口，4 秒后自动消失。</summary>
-    private static async Task ShowAlertAsync(string title, string message)
-    {
-        var alert = new Window
-        {
-            Title = title,
-            Width = 340, Height = 140,
-            WindowStartupLocation = WindowStartupLocation.CenterScreen,
-            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#18181A")),
-            Foreground = Avalonia.Media.Brushes.White,
-            CanResize = false,
-            WindowDecorations = WindowDecorations.BorderOnly,
-            Topmost = true,
-            FontFamily = new Avalonia.Media.FontFamily("HarmonyOS Sans SC, HarmonyOS Sans, Inter, Microsoft YaHei UI, sans-serif"),
-        };
-
-        var card = new Border
-        {
-            Background = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#232325")),
-            CornerRadius = new Avalonia.CornerRadius(10),
-            Margin = new Avalonia.Thickness(12),
-            Padding = new Avalonia.Thickness(18, 16),
-        };
-
-        var stack = new StackPanel { Spacing = 10 };
-        stack.Children.Add(new TextBlock
-        {
-            Text = title,
-            FontSize = 15,
-            FontWeight = Avalonia.Media.FontWeight.SemiBold,
-            Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#C6CA4C")),
-        });
-        stack.Children.Add(new TextBlock
-        {
-            Text = message,
-            FontSize = 13,
-            TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-            Foreground = new Avalonia.Media.SolidColorBrush(Avalonia.Media.Color.Parse("#C8C8C8")),
-        });
-        card.Child = stack;
-        alert.Content = card;
-
-        // 入场动画
-        alert.Opacity = 0;
-        alert.RenderTransform = new Avalonia.Media.ScaleTransform(0.92, 0.92);
-        alert.RenderTransformOrigin = new Avalonia.RelativePoint(0.5, 0.5, Avalonia.RelativeUnit.Relative);
-
-        alert.Show();
-
-        var fadeIn = new Avalonia.Animation.Animation
-        {
-            Duration = TimeSpan.FromMilliseconds(150),
-            FillMode = Avalonia.Animation.FillMode.Forward,
-            Easing = new Avalonia.Animation.Easings.QuadraticEaseOut(),
-            Children =
-            {
-                new Avalonia.Animation.KeyFrame { Cue = new Avalonia.Animation.Cue(0d), Setters = { new Avalonia.Styling.Setter(Avalonia.Visual.OpacityProperty, 0d) } },
-                new Avalonia.Animation.KeyFrame { Cue = new Avalonia.Animation.Cue(1d), Setters = { new Avalonia.Styling.Setter(Avalonia.Visual.OpacityProperty, 1d) } },
-            },
-        };
-        _ = fadeIn.RunAsync(alert);
-
-        await Task.Delay(4000);
-
-        // 退场
-        var fadeOut = new Avalonia.Animation.Animation
-        {
-            Duration = TimeSpan.FromMilliseconds(120),
-            FillMode = Avalonia.Animation.FillMode.Forward,
-            Easing = new Avalonia.Animation.Easings.QuadraticEaseIn(),
-            Children =
-            {
-                new Avalonia.Animation.KeyFrame { Cue = new Avalonia.Animation.Cue(0d), Setters = { new Avalonia.Styling.Setter(Avalonia.Visual.OpacityProperty, 1d) } },
-                new Avalonia.Animation.KeyFrame { Cue = new Avalonia.Animation.Cue(1d), Setters = { new Avalonia.Styling.Setter(Avalonia.Visual.OpacityProperty, 0d) } },
-            },
-        };
-        await fadeOut.RunAsync(alert);
-        if (alert.IsVisible)
-            alert.Close();
     }
 
     // ---------------- 第二个实例的唤醒通路 ----------------
@@ -459,23 +378,23 @@ public partial class App : Application
             var (hasUpdate, version, url) = await UpdateChecker.CheckAsync();
             if (hasUpdate && url is not null)
             {
-                var result = await MessageBox.Show(
+                var result = await MessageBoxWindow.ShowAsync(
                     owner,
                     Localization.UpdateMsg(version ?? "?"),
                     Localization.UpdateTitle,
                     MessageBoxButton.OkCancel);
 
                 if (result == MessageBoxResult.Ok)
-                    Platform.Start(url);
+                    UrlLauncher.Open(url);
             }
             else
             {
-                await ShowAlertAsync(Localization.CheckUpdate, Localization.UpToDate);
+                await AlertWindow.ShowAsync(Localization.CheckUpdate, Localization.UpToDate);
             }
         }
         catch
         {
-            await ShowAlertAsync(Localization.CheckUpdate, Localization.UpdateCheckFailed);
+            await AlertWindow.ShowAsync(Localization.CheckUpdate, Localization.UpdateCheckFailed);
         }
     }
 

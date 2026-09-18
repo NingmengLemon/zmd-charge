@@ -27,6 +27,16 @@
   <Color x:Key="Hud.BadgeLow">#FF4D4F</Color>
   <Color x:Key="Hud.BadgeDark">#FF262425</Color>
 
+  <!-- ==== 提醒卡 / 消息框 ====
+       原来这几组颜色硬编码在 App.axaml.cs 与 SettingsWindow.axaml.cs 的代码里，
+       和 HUD 配色各存一份。搬进 XAML 后统一收到这里。
+       标题与主按钮底色复用 Hud.Accent。 -->
+  <Color x:Key="Dialog.Window">#FF18181A</Color>
+  <Color x:Key="Dialog.Card">#FF232325</Color>
+  <Color x:Key="Dialog.Body">#FFC8C8C8</Color>
+  <Color x:Key="Dialog.MessageBox">#FF1E1E1E</Color>
+  <Color x:Key="Dialog.ButtonText">#FF1E1E1E</Color>
+
   <!-- ==== 无衬线字体族（Inter 优先，中文回退到系统黑体，均无描边） ==== -->
   <FontFamily x:Key="Hud.FontFamily">"HarmonyOS Sans SC", "HarmonyOS Sans", Inter, "Microsoft YaHei UI", "PingFang SC", sans-serif</FontFamily>
 

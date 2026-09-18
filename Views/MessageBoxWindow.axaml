@@ -1,0 +1,39 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="380" d:DesignHeight="180"
+        x:Class="EndfieldCharge.Views.MessageBoxWindow"
+        Width="380" Height="180"
+        CanResize="False"
+        WindowDecorations="None"
+        WindowStartupLocation="CenterOwner"
+        Background="{StaticResource Dialog.MessageBox}"
+        Foreground="White"
+        FontFamily="{StaticResource Hud.FontFamily}">
+
+  <!-- 极简消息框：一句正文 + 右下角按钮。
+       按钮顺序是「取消 确定」，与原来代码里 Insert(0, cancelBtn) 的结果一致。 -->
+  <StackPanel Margin="20" Spacing="16">
+    <TextBlock x:Name="MessageText"
+               TextWrapping="Wrap"
+               FontSize="14"/>
+
+    <StackPanel Orientation="Horizontal"
+                HorizontalAlignment="Right"
+                Spacing="8">
+      <Button x:Name="CancelButton"
+              Width="80" Height="32" CornerRadius="6"
+              IsVisible="False"
+              HorizontalContentAlignment="Center"
+              VerticalContentAlignment="Center"/>
+      <Button x:Name="OkButton"
+              Width="80" Height="32" CornerRadius="6"
+              Background="{StaticResource Hud.Accent}"
+              Foreground="{StaticResource Dialog.ButtonText}"
+              FontWeight="SemiBold"
+              HorizontalContentAlignment="Center"
+              VerticalContentAlignment="Center"/>
+    </StackPanel>
+  </StackPanel>
+</Window>
