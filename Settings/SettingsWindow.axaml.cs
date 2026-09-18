@@ -1,455 +1,65 @@
-using System.Globalization;
+using System.Diagnostics.CodeAnalysis;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Controls.Primitives;
-using Avalonia.Interactivity;
-using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
-using Avalonia.Threading;
-using EndfieldCharge.Animations;
-using EndfieldCharge.Services;
 using EndfieldCharge.Views;
 
 namespace EndfieldCharge.Settings;
 
+/// <summary>
+/// 设置窗。逻辑全在 SettingsViewModel 里，这里只留视图自己的事：
+/// 窗口图标、构造 ViewModel、把「已保存」转交给 App、关闭时解订阅。
+///
+/// CA1001：本类持有可释放的 ViewModel，但释放时机是窗口关闭（OnClosed），
+/// 不是 IDisposable。Avalonia 的 Window 不实现 IDisposable，
+/// 自行实现会与未来可能的基类实现打架。
+/// </summary>
+[SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable",
+    Justification = "释放统一走 Window.OnClosed，这是框架给的生命周期钩子。")]
 public partial class SettingsWindow : Window
 {
-    private readonly HudWindow _hud;
+    private readonly SettingsViewModel _viewModel;
 
-    public SettingsWindow(AppSettings settings, HudWindow hud, string initialTab = "General")
+    public SettingsWindow(AppSettings settings, IHudPreview hud, string initialTab = "General")
     {
         InitializeComponent();
 
-        _hud = hud;
-
-        // 窗口图标
         try
         {
             using var stream = AssetLoader.Open(new Uri("avares://EndfieldCharge/Assets/tray_bolt.png"));
             Icon = new WindowIcon(new Bitmap(stream));
         }
-        catch { }
-
-        InitLanguageCombo();
-        InitPositionCombo();
-        InitPreviewModeCombo();
-        ApplyLocalization();
-
-        PopulateMonitors();
-        LoadSettings(settings);
-
-        // Tab 切换
-        TabGeneralBtn.PointerPressed += (_, _) => SwitchTab(TabGeneralBtn, GeneralPanel);
-        TabAnimationBtn.PointerPressed += (_, _) => SwitchTab(TabAnimationBtn, AnimationPanel);
-        TabNotificationsBtn.PointerPressed += (_, _) => SwitchTab(TabNotificationsBtn, NotificationsPanel);
-        TabAboutBtn.PointerPressed += (_, _) => SwitchTab(TabAboutBtn, AboutPanel);
-
-        // 滑块值同步。
-        // 数值一律钉死不变文化：这是固定格式的读数，不该随系统区域设置换小数点符号（CA1305）
-        ScaleSlider.PropertyChanged += (_, e) =>
-        {
-            if (e.Property == RangeBase.ValueProperty)
-                ScaleValue.Text = ScaleSlider.Value.ToString("F2", CultureInfo.InvariantCulture);
-        };
-        DurationSlider.PropertyChanged += (_, e) =>
-        {
-            if (e.Property == RangeBase.ValueProperty)
-                DurationValue.Text = string.Create(CultureInfo.InvariantCulture, $"{DurationSlider.Value:F1}s");
-        };
-        BounceSlider.PropertyChanged += (_, e) =>
-        {
-            if (e.Property == RangeBase.ValueProperty)
-                BounceValue.Text = BounceSlider.Value.ToString("F3", CultureInfo.InvariantCulture);
-        };
-        RippleIntensitySlider.PropertyChanged += (_, e) =>
-        {
-            if (e.Property == RangeBase.ValueProperty)
-                RippleIntensityValue.Text = RippleIntensitySlider.Value.ToString("F2", CultureInfo.InvariantCulture);
-        };
-        RippleSpreadSlider.PropertyChanged += (_, e) =>
-        {
-            if (e.Property == RangeBase.ValueProperty)
-                RippleSpreadValue.Text = RippleSpreadSlider.Value.ToString("F2", CultureInfo.InvariantCulture);
-        };
-        LowBatterySlider.PropertyChanged += (_, e) =>
-        {
-            if (e.Property == RangeBase.ValueProperty)
-                LowBatteryValue.Text = string.Create(CultureInfo.InvariantCulture, $"{LowBatterySlider.Value:F0}%");
-        };
-
-        // 低电量开关联动
-        LowBatterySwitch.IsCheckedChanged += (_, _) =>
-        {
-            LowBatterySlider.IsEnabled = LowBatterySwitch.IsChecked == true;
-        };
-
-        // 事件
-        SaveBtn.Click += OnSave;
-        CheckUpdateBtn.Click += OnCheckUpdate;
-        PreviewPlayBtn.Click += OnPlayPreview;
-        FontInstallBtn.Click += OnInstallFont;
-
-        // 默认 Tab
-        var (tab, panel) = initialTab switch
-        {
-            "Animation" => (TabAnimationBtn, AnimationPanel),
-            "Notifications" => (TabNotificationsBtn, NotificationsPanel),
-            "About" => (TabAboutBtn, AboutPanel),
-            _ => (TabGeneralBtn, GeneralPanel),
-        };
-        SwitchTab(tab, panel);
-    }
-
-    // ---------------- 初始化 ComboBox 项 ----------------
-
-    private void InitLanguageCombo()
-    {
-        LanguageCombo.Items.Clear();
-        LanguageCombo.Items.Add(new ComboBoxItem { Tag = "auto" });
-        LanguageCombo.Items.Add(new ComboBoxItem { Tag = "zh" });
-        LanguageCombo.Items.Add(new ComboBoxItem { Tag = "en" });
-    }
-
-    private void InitPositionCombo()
-    {
-        PositionCombo.Items.Clear();
-        PositionCombo.Items.Add(new ComboBoxItem { Tag = "TopCenter" });
-        PositionCombo.Items.Add(new ComboBoxItem { Tag = "TopRight" });
-        PositionCombo.Items.Add(new ComboBoxItem { Tag = "TopLeft" });
-    }
-
-    private void InitPreviewModeCombo()
-    {
-        PreviewModeCombo.Items.Clear();
-        PreviewModeCombo.Items.Add(new ComboBoxItem { Tag = "plug" });
-        PreviewModeCombo.Items.Add(new ComboBoxItem { Tag = "saver" });
-        PreviewModeCombo.Items.Add(new ComboBoxItem { Tag = "unplug" });
-    }
-
-    // ---------------- 本地化 ----------------
-
-    private void ApplyLocalization()
-    {
-        Title = Localization.SettingsTitle;
-        WinTitle.Text = Localization.SettingsTitle;
-        TabGeneralText.Text = Localization.TabGeneral;
-        TabAnimationText.Text = Localization.TabAnimation;
-        TabNotificationsText.Text = Localization.TabNotifications;
-        TabAboutText.Text = Localization.TabAbout;
-        LabelScale.Text = Localization.LabelScale;
-        LabelDuration.Text = Localization.LabelDuration;
-        LabelPosition.Text = Localization.LabelPosition;
-        LabelMonitor.Text = Localization.LabelMonitor;
-        LabelLanguage.Text = Localization.LabelLanguage;
-        LabelAutoStart.Text = Localization.LabelAutoStart;
-        DescAutoStartText.Text = Localization.DescAutoStart;
-        LabelLowBatteryEnable.Text = Localization.LabelLowBatteryEnable;
-        DescLowBatteryAlertText.Text = Localization.DescLowBatteryAlert;
-        LabelLowBattery.Text = Localization.LabelLowBattery;
-        LabelFullChargeEnable.Text = Localization.LabelFullChargeEnable;
-        DescFullChargeAlertText.Text = Localization.DescFullChargeAlert;
-        LabelPowerSaverNotify.Text = Localization.LabelPowerSaverNotify;
-        PowerSaverNotifyDesc.Text = Localization.PowerSaverNotifyDesc;
-        LabelVersion.Text = Localization.LabelVersion;
-        LabelAuthor.Text = Localization.LabelAuthor;
-        SaveBtn.Content = Localization.BtnSave;
-        CheckUpdateBtn.Content = Localization.BtnCheckUpdate;
-        AboutSubtitleText.Text = Localization.AboutSubtitle;
-        FontSectionTitle.Text = Localization.FontSectionTitle;
-        FontDescText.Text = Localization.FontDesc;
-        FontInstallBtn.Content = Localization.BtnInstallFont;
-
-        SectionDisplayText.Text = Localization.SectionDisplay;
-        SectionPositionText.Text = Localization.SectionPosition;
-        SectionStartupText.Text = Localization.SectionStartup;
-        SectionAlertSettingsText.Text = Localization.SectionAlertSettings;
-        SectionAnimParams.Text = Localization.SectionAnimParams;
-        SectionPreview.Text = Localization.SectionPreview;
-        LabelBounce.Text = Localization.LabelBounce;
-        LabelRippleIntensity.Text = Localization.LabelRippleIntensity;
-        LabelRippleSpread.Text = Localization.LabelRippleSpread;
-        LabelPlayMode.Text = Localization.LabelPlayMode;
-        PreviewPlayBtn.Content = Localization.BtnPlay;
-
-        if (LanguageCombo.Items.Count >= 3)
-        {
-            if (LanguageCombo.Items[0] is ComboBoxItem ci0) ci0.Content = Localization.ValueAuto;
-            if (LanguageCombo.Items[1] is ComboBoxItem ci1) ci1.Content = Localization.ValueChinese;
-            if (LanguageCombo.Items[2] is ComboBoxItem ci2) ci2.Content = Localization.ValueEnglish;
-        }
-
-        if (PositionCombo.Items.Count >= 3)
-        {
-            if (PositionCombo.Items[0] is ComboBoxItem pi0) pi0.Content = Localization.PosTopCenter;
-            if (PositionCombo.Items[1] is ComboBoxItem pi1) pi1.Content = Localization.PosTopRight;
-            if (PositionCombo.Items[2] is ComboBoxItem pi2) pi2.Content = Localization.PosTopLeft;
-        }
-
-        if (PreviewModeCombo.Items.Count >= 3)
-        {
-            if (PreviewModeCombo.Items[0] is ComboBoxItem mi0) mi0.Content = Localization.ModePlug;
-            if (PreviewModeCombo.Items[1] is ComboBoxItem mi1) mi1.Content = Localization.ModeSaver;
-            if (PreviewModeCombo.Items[2] is ComboBoxItem mi2) mi2.Content = Localization.ModeUnplug;
-        }
-    }
-
-    // ---------------- 显示器 ----------------
-
-    /// <summary>语言切换后刷新窗口内全部文案（含标题栏与显示器下拉项），保留当前选择。</summary>
-    private void RefreshLocalization()
-    {
-        ApplyLocalization();
-
-        if (MonitorCombo.Items.Count == 0)
-            return;
-
-        if (MonitorCombo.Items[0] is ComboBoxItem primaryItem)
-            primaryItem.Content = Localization.MonitorPrimaryDefault;
-
-        var screens = Screens.All;
-        for (int i = 1; i < MonitorCombo.Items.Count; i++)
-        {
-            if (MonitorCombo.Items[i] is not ComboBoxItem item || item.Tag is not int idx)
-                continue;
-
-            bool isPrimary = idx >= 0 && idx < screens.Count && screens[idx].IsPrimary;
-            item.Content = Localization.MonitorName(idx, isPrimary);
-        }
-    }
-
-    private void PopulateMonitors()
-    {
-        var screens = Screens.All;
-        MonitorCombo.Items.Clear();
-
-        // 第一项：主显示器（默认），MonitorIndex 存 -1
-        MonitorCombo.Items.Add(new ComboBoxItem
-        {
-            Content = Localization.MonitorPrimaryDefault,
-            Tag = -1,
-        });
-
-        for (int i = 0; i < screens.Count; i++)
-        {
-            var s = screens[i];
-            MonitorCombo.Items.Add(new ComboBoxItem
-            {
-                Content = Localization.MonitorName(i, s.IsPrimary),
-                Tag = i,
-            });
-        }
-    }
-
-    // ---------------- 加载 / 收集 ----------------
-
-    private void LoadSettings(AppSettings s)
-    {
-        ScaleSlider.Value = s.GlobalScale;
-        DurationSlider.Value = s.DisplayDurationSeconds;
-        BounceSlider.Value = s.BounceStrength;
-        RippleIntensitySlider.Value = s.RippleIntensity;
-        RippleSpreadSlider.Value = s.RippleSpread;
-        PositionCombo.SelectedIndex = (int)s.HudPosition;
-        // 下拉第一项是「主显示器（默认）」(-1)，物理显示器 i 对应下拉第 i+1 项
-        int monitorSel = s.MonitorIndex < 0 ? 0 : s.MonitorIndex + 1;
-        MonitorCombo.SelectedIndex = monitorSel >= 0 && monitorSel < MonitorCombo.Items.Count
-            ? monitorSel
-            : 0;
-
-        LanguageCombo.SelectedIndex = s.Language switch
-        {
-            "zh" => 1,
-            "en" => 2,
-            _ => 0,
-        };
-
-        PowerSaverSwitch.IsChecked = s.EnablePowerSaverNotify;
-        LowBatterySwitch.IsChecked = s.EnableLowBatteryAlert;
-        LowBatterySlider.Value = s.LowBatteryThreshold;
-        LowBatterySlider.IsEnabled = s.EnableLowBatteryAlert;
-        FullChargeSwitch.IsChecked = s.EnableFullChargeAlert;
-        AutoStartSwitch.IsChecked = s.EnableAutoStart;
-
-        VersionText.Text = GetType().Assembly.GetName().Version?.ToString(3) ?? "1.0.0";
-
-        FontStatusText.Text = string.Empty;
-    }
-
-    private AppSettings CollectSettings() => new()
-    {
-        GlobalScale = Math.Round(ScaleSlider.Value, 2),
-        DisplayDurationSeconds = Math.Round(DurationSlider.Value, 1),
-        BounceStrength = Math.Round(BounceSlider.Value, 3),
-        RippleIntensity = Math.Round(RippleIntensitySlider.Value, 2),
-        RippleSpread = Math.Round(RippleSpreadSlider.Value, 2),
-        HudPosition = (HudPosition)PositionCombo.SelectedIndex,
-        MonitorIndex = MonitorCombo.SelectedItem is ComboBoxItem item && item.Tag is int idx
-            ? idx
-            : 0,
-        Language = LanguageCombo.SelectedIndex switch
-        {
-            1 => "zh",
-            2 => "en",
-            _ => "auto",
-        },
-        EnableLowBatteryAlert = LowBatterySwitch.IsChecked == true,
-        LowBatteryThreshold = (int)LowBatterySlider.Value,
-        EnableFullChargeAlert = FullChargeSwitch.IsChecked == true,
-        EnablePowerSaverNotify = PowerSaverSwitch.IsChecked == true,
-        EnableAutoStart = AutoStartSwitch.IsChecked == true,
-    };
-
-    // ---------------- Tab 切换 ----------------
-
-    private void SwitchTab(Border tabBtn, StackPanel panel)
-    {
-        TabGeneralBtn.Background = Brushes.Transparent;
-        TabAnimationBtn.Background = Brushes.Transparent;
-        TabNotificationsBtn.Background = Brushes.Transparent;
-        TabAboutBtn.Background = Brushes.Transparent;
-
-        tabBtn.Background = new SolidColorBrush(Color.Parse("#2A2A2D"));
-
-        GeneralPanel.IsVisible = panel == GeneralPanel;
-        AnimationPanel.IsVisible = panel == AnimationPanel;
-        NotificationsPanel.IsVisible = panel == NotificationsPanel;
-        AboutPanel.IsVisible = panel == AboutPanel;
-    }
-
-    // ---------------- 动画预览 ----------------
-
-    /// <summary>用当前滑块值（未保存也生效）实时预览动画。</summary>
-    private async void OnPlayPreview(object? sender, RoutedEventArgs e)
-    {
-        PreviewPlayBtn.IsEnabled = false;
-
-        // 用当前滑块值构造参数，无需保存即可预览效果
-        var options = new AnimationOptions
-        {
-            DurationSeconds = Math.Clamp(DurationSlider.Value, 3d, 10d),
-            BounceStrength = Math.Clamp(BounceSlider.Value, 0d, 0.5d),
-            RippleIntensity = Math.Clamp(RippleIntensitySlider.Value, 0d, 2d),
-            RippleSpread = Math.Clamp(RippleSpreadSlider.Value, 0.5d, 1.5d),
-        };
-
-        var sample = new BatterySnapshot(
-            RemainingWh: 62.4, FullWh: 90.0,
-            Percent: 69, AcOnline: true, Charging: true);
-
-        try
-        {
-            switch (PreviewModeCombo.SelectedIndex)
-            {
-                case 1:
-                    await _hud.ShowAndPlayAsync(sample,
-                        HudPlayMode.PowerSaver, options);
-                    break;
-                case 2:
-                    await _hud.ShowSimpleAsync(sample, options);
-                    break;
-                default:
-                    await _hud.ShowAndPlayAsync(sample,
-                        HudPlayMode.Charge, options);
-                    break;
-            }
-        }
         catch
         {
+            // 图标加载失败不影响使用
         }
-        finally
-        {
-            PreviewPlayBtn.IsEnabled = true;
-        }
+
+        _viewModel = new SettingsViewModel(hud, () => this, settings, CollectMonitors(), initialTab);
+        _viewModel.Saved += OnSaved;
+        DataContext = _viewModel;
     }
 
-    // ---------------- 保存 ----------------
-
-    private void OnSave(object? sender, RoutedEventArgs e)
+    /// <summary>显示器列表来自窗口（Screens 是 TopLevel 的属性），ViewModel 只收数据。</summary>
+    private MonitorInfo[] CollectMonitors()
     {
-        var settings = CollectSettings();
-        SettingsManager.Save(settings);
+        var screens = Screens.All;
+        var result = new MonitorInfo[screens.Count];
+        for (int i = 0; i < screens.Count; i++)
+            result[i] = new MonitorInfo(i, screens[i].IsPrimary);
+        return result;
+    }
 
-        // 处理开机自启
-        if (settings.EnableAutoStart)
-            Services.AutoStart.Enable(Services.AutoStart.CurrentExePath);
-        else
-            Services.AutoStart.Disable();
-
+    private void OnSaved(object? sender, AppSettings settings)
+    {
         if (Application.Current is App app)
             app.OnSettingsChanged(settings);
-
-        // 语言可能刚被改掉，设置窗自己的文案要立刻跟上，否则得关掉重开才变
-        RefreshLocalization();
-
-        SavedHint.Text = Localization.SavedToast;
-        SavedHint.Opacity = 1;
-        Dispatcher.UIThread.Post(async () =>
-        {
-            await System.Threading.Tasks.Task.Delay(2000);
-            SavedHint.Opacity = 0;
-        });
     }
 
-    // ---------------- 检查更新 ----------------
-
-    private async void OnCheckUpdate(object? sender, RoutedEventArgs e)
+    protected override void OnClosed(EventArgs e)
     {
-        CheckUpdateBtn.IsEnabled = false;
-        UpdateStatusText.Text = "...";
-
-        try
-        {
-            var (hasUpdate, version, url) = await Services.UpdateChecker.CheckAsync();
-            if (hasUpdate && url is not null)
-            {
-                var result = await MessageBoxWindow.ShowAsync(
-                    this,
-                    Localization.UpdateMsg(version ?? "?"),
-                    Localization.UpdateTitle,
-                    MessageBoxButton.OkCancel);
-
-                if (result == MessageBoxResult.Ok)
-                    UrlLauncher.Open(url);
-            }
-            else
-            {
-                UpdateStatusText.Text = Localization.UpToDate;
-            }
-        }
-        catch
-        {
-            UpdateStatusText.Text = Localization.UpdateCheckFailed;
-        }
-        finally
-        {
-            CheckUpdateBtn.IsEnabled = true;
-        }
-    }
-
-    // ---------------- 字体安装 ----------------
-
-    private async void OnInstallFont(object? sender, RoutedEventArgs e)
-    {
-        FontInstallBtn.IsEnabled = false;
-        FontStatusText.Text = Localization.FontInstalling;
-
-        // Inter 字体 GitHub Releases 下载页
-        const string fontUrl = "https://github.com/rsms/inter/releases/latest";
-
-        try
-        {
-            UrlLauncher.Open(fontUrl);
-            await Task.Delay(500);
-            FontStatusText.Text = Localization.FontInstalled;
-        }
-        catch
-        {
-            FontStatusText.Text = Localization.UpdateCheckFailed;
-        }
-        finally
-        {
-            FontInstallBtn.IsEnabled = true;
-        }
+        _viewModel.Saved -= OnSaved;
+        _viewModel.Dispose();
+        base.OnClosed(e);
     }
 }

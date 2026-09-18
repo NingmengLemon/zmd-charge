@@ -56,7 +56,7 @@ public partial class App : Application
 
         // 加载设置
         _settings = SettingsManager.Load();
-        Localization.UseSettings(_settings);
+        Localization.Current.UseSettings(_settings);
         Logger.Enabled = true; // 可改为设置项
 
         // 全局未捕获异常兜底
@@ -101,7 +101,7 @@ public partial class App : Application
     public void OnSettingsChanged(AppSettings settings)
     {
         _settings = settings;
-        Localization.UseSettings(settings);
+        Localization.Current.UseSettings(settings);
         _hud?.ApplySettings(settings);
         ApplyTrayLocalization();
     }
@@ -260,10 +260,10 @@ public partial class App : Application
         switch (kind)
         {
             case AlertKind.FullCharge:
-                _ = AlertWindow.ShowAsync(Localization.FullChargeTitle, Localization.FullChargeMsg);
+                _ = AlertWindow.ShowAsync(Localization.Current.FullChargeTitle, Localization.Current.FullChargeMsg);
                 break;
             case AlertKind.LowBattery:
-                _ = AlertWindow.ShowAsync(Localization.LowBatteryTitle, Localization.LowBatteryMsg(snap.Percent));
+                _ = AlertWindow.ShowAsync(Localization.Current.LowBatteryTitle, Localization.Current.LowBatteryMsg(snap.Percent));
                 break;
         }
     }
@@ -307,7 +307,7 @@ public partial class App : Application
     {
         _tray = new TrayIcon
         {
-            ToolTipText = Localization.TrayTooltip,
+            ToolTipText = Localization.Current.TrayTooltip,
             IsVisible = true,
         };
 
@@ -335,16 +335,16 @@ public partial class App : Application
     /// <summary>右键菜单。菜单项文字在语言切换时由 ApplyTrayLocalization 刷新。</summary>
     private NativeMenu BuildTrayMenu()
     {
-        _menuPreview = new NativeMenuItem { Header = Localization.PreviewHud };
+        _menuPreview = new NativeMenuItem { Header = Localization.Current.PreviewHud };
         _menuPreview.Click += (_, _) => _ = TriggerHudAsync();
 
-        _menuSettings = new NativeMenuItem { Header = Localization.Settings };
+        _menuSettings = new NativeMenuItem { Header = Localization.Current.Settings };
         _menuSettings.Click += (_, _) => OpenSettingsWindow();
 
-        _menuCheckUpdate = new NativeMenuItem { Header = Localization.CheckUpdate };
+        _menuCheckUpdate = new NativeMenuItem { Header = Localization.Current.CheckUpdate };
         _menuCheckUpdate.Click += async (_, _) => await CheckUpdateFromTrayAsync();
 
-        _menuExit = new NativeMenuItem { Header = Localization.Exit };
+        _menuExit = new NativeMenuItem { Header = Localization.Current.Exit };
         _menuExit.Click += (_, _) => _desktop?.Shutdown();
 
         var menu = new NativeMenu();
@@ -359,12 +359,12 @@ public partial class App : Application
     private void ApplyTrayLocalization()
     {
         if (_tray is not null)
-            _tray.ToolTipText = Localization.TrayTooltip;
+            _tray.ToolTipText = Localization.Current.TrayTooltip;
 
-        if (_menuPreview is not null) _menuPreview.Header = Localization.PreviewHud;
-        if (_menuSettings is not null) _menuSettings.Header = Localization.Settings;
-        if (_menuCheckUpdate is not null) _menuCheckUpdate.Header = Localization.CheckUpdate;
-        if (_menuExit is not null) _menuExit.Header = Localization.Exit;
+        if (_menuPreview is not null) _menuPreview.Header = Localization.Current.PreviewHud;
+        if (_menuSettings is not null) _menuSettings.Header = Localization.Current.Settings;
+        if (_menuCheckUpdate is not null) _menuCheckUpdate.Header = Localization.Current.CheckUpdate;
+        if (_menuExit is not null) _menuExit.Header = Localization.Current.Exit;
     }
 
     private async Task CheckUpdateFromTrayAsync()
@@ -380,8 +380,8 @@ public partial class App : Application
             {
                 var result = await MessageBoxWindow.ShowAsync(
                     owner,
-                    Localization.UpdateMsg(version ?? "?"),
-                    Localization.UpdateTitle,
+                    Localization.Current.UpdateMsg(version ?? "?"),
+                    Localization.Current.UpdateTitle,
                     MessageBoxButton.OkCancel);
 
                 if (result == MessageBoxResult.Ok)
@@ -389,12 +389,12 @@ public partial class App : Application
             }
             else
             {
-                await AlertWindow.ShowAsync(Localization.CheckUpdate, Localization.UpToDate);
+                await AlertWindow.ShowAsync(Localization.Current.CheckUpdate, Localization.Current.UpToDate);
             }
         }
         catch
         {
-            await AlertWindow.ShowAsync(Localization.CheckUpdate, Localization.UpdateCheckFailed);
+            await AlertWindow.ShowAsync(Localization.Current.CheckUpdate, Localization.Current.UpdateCheckFailed);
         }
     }
 

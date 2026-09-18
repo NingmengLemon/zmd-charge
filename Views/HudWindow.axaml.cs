@@ -29,7 +29,7 @@ public enum HudPlayMode
 /// </summary>
 [SuppressMessage("Design", "CA1001:Types that own disposable fields should be disposable",
     Justification = "释放统一走 Window.OnClosed，这是框架给的生命周期钩子。")]
-public partial class HudWindow : Window
+public partial class HudWindow : Window, IHudPreview
 {
     private static readonly TimeSpan DismissDuration = TimeSpan.FromMilliseconds(160);
 
@@ -58,8 +58,8 @@ public partial class HudWindow : Window
     {
         InitializeComponent();
 
-        TagLineText.Text = Localization.TagLine;
-        TitleText.Text = Localization.TitleMode;
+        TagLineText.Text = Localization.Current.TagLine;
+        TitleText.Text = Localization.Current.TitleMode;
 
         Cursor = new Cursor(StandardCursorType.Hand);
         PointerPressed += (_, _) => _ = DismissAsync();
@@ -84,8 +84,8 @@ public partial class HudWindow : Window
         Height = PillMaxHeight * settings.GlobalScale;
 
         // 更新本地化文本（可能语言变了）
-        TagLineText.Text = Localization.TagLine;
-        TitleText.Text = Localization.TitleMode;
+        TagLineText.Text = Localization.Current.TagLine;
+        TitleText.Text = Localization.Current.TitleMode;
     }
 
     // ---------------- 动画播放 ----------------
@@ -131,8 +131,8 @@ public partial class HudWindow : Window
         ApplyBattery(battery);
 
         // 文案主题：充电 = 超充模式；省电 = 省电模式
-        TagLineText.Text = mode == HudPlayMode.PowerSaver ? Localization.TagLineSaver : Localization.TagLine;
-        TitleText.Text = mode == HudPlayMode.PowerSaver ? Localization.TitleSaver : Localization.TitleMode;
+        TagLineText.Text = mode == HudPlayMode.PowerSaver ? Localization.Current.TagLineSaver : Localization.Current.TagLine;
+        TitleText.Text = mode == HudPlayMode.PowerSaver ? Localization.Current.TitleSaver : Localization.Current.TitleMode;
 
         var o = options ?? _animOptions;
 

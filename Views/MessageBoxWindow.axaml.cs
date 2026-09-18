@@ -36,7 +36,7 @@ public partial class MessageBoxWindow : Window
         Title = title;
         MessageText.Text = message;
 
-        OkButton.Content = Localization.BtnDownload;
+        OkButton.Content = Localization.Current.BtnDownload;
         OkButton.Click += (_, _) =>
         {
             _result = MessageBoxResult.Ok;
@@ -45,7 +45,7 @@ public partial class MessageBoxWindow : Window
 
         if (button == MessageBoxButton.OkCancel)
         {
-            CancelButton.Content = Localization.BtnCancel;
+            CancelButton.Content = Localization.Current.BtnCancel;
             CancelButton.IsVisible = true;
             CancelButton.Click += (_, _) =>
             {
