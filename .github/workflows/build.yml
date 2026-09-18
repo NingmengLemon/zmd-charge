@@ -39,21 +39,29 @@ jobs:
     #   主干构建   : <最近 tag>.<run_number>，例如 1.1.1.500
     #                第 4 段让主干构建"比同名 tag 新"，否则 0.0.N < 1.1.1 会让
     #                应用一直提示更新、并把用户带到比当前代码更旧的发布版。
+    #                仓库里一个 tag 都没有时（fork 常见）退化成 0.0.<run_number>。
     # 更新源用 github.repository，任何 fork 的 CI 产物都查自己的 Release。
     - name: Resolve version and update source
       id: ver
       shell: pwsh
       run: |
+        # 探测最近 tag。仓库里没有 tag 时 git describe 必然以非 0 退出，这是预期内的分支；
+        # 但 runner 给 shell: pwsh 生成的脚本末尾会追加
+        #   if ((Test-Path -LiteralPath variable:\LASTEXITCODE)) { exit $LASTEXITCODE }
+        # 于是那次预期内的失败会把整个 step 判成失败（实测复现：脚本把版本正确打印出来了，
+        # step 仍然以 1 退出）。所以探完必须显式归零，且只归零这一处。
+        $last = git describe --tags --abbrev=0 2>$null
+        $hasTag = $LASTEXITCODE -eq 0
+        $global:LASTEXITCODE = 0
+
         if ($env:GITHUB_REF -like 'refs/tags/v*') {
           $v = $env:GITHUB_REF -replace 'refs/tags/v', ''
+        } elseif ($hasTag -and $last) {
+          $base = ($last -replace '^v', '') -replace '-.*$', ''
+          $v = $base + "." + $env:GITHUB_RUN_NUMBER
         } else {
-          $last = git describe --tags --abbrev=0 2>$null
-          if ($LASTEXITCODE -eq 0 -and $last) {
-            $base = ($last -replace '^v', '') -replace '-.*$', ''
-            $v = $base + "." + $env:GITHUB_RUN_NUMBER
-          } else {
-            $v = "0.0." + $env:GITHUB_RUN_NUMBER
-          }
+          Write-Host "::warning::仓库里没有任何 tag，主干版本退化为 0.0.$env:GITHUB_RUN_NUMBER"
+          $v = "0.0." + $env:GITHUB_RUN_NUMBER
         }
         $owner, $repo = $env:GITHUB_REPOSITORY -split '/', 2
         "version=$v" >> $env:GITHUB_OUTPUT
