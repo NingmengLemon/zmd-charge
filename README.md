@@ -22,7 +22,7 @@
 | 设置窗口 | 全局缩放（0.4–1.2）、显示时长（3–10s）、HUD 位置（顶部居中/靠右/靠左）、显示器选择、语言、开机自启，保存即生效并持久化 |
 | 托盘图标 | 左键单击播放一次 HUD 动画，右键弹出菜单（预览 / 设置 / 检查更新 / 退出） |
 | 动画微调 | 设置窗口「动画」页实时预览并微调时长 / 回弹 / 波纹参数，保存即生效并持久化 |
-| 节能模式提示 | 开 / 关节能（省电）模式时弹出对应 HUD。24H2+（build 26100+）订阅 GUID_ENERGY_SAVER_STATUS 通知、轮询注册表 EnergySaverState；旧系统用 GUID_POWER_SAVING_STATUS + SystemStatusFlag。设置「通知」页可开关 |
+| 节能模式提示 | 开 / 关节能（省电）模式时弹出对应 HUD。当前只有旧系统的路径可用，见下方「已知缺陷」 |
 | 检查更新 | 读取 GitHub Releases API，比较程序集版本，一键跳转下载页。目标仓库由 CI 用 `github.repository` 注入，本地构建退回本仓库 |
 | 多语言 | 中文 / 英文，默认跟随系统，可在设置中手动切换 |
 | 开机自启 | 设置窗口「通用」页开关，写 `HKCU\...\CurrentVersion\Run`（当前用户级，无需管理员） |
@@ -30,10 +30,22 @@
 | 统一图标 | 托盘 / 各窗口 / exe 统一使用 `Assets\tray_bolt` 图标 |
 | 日志 | `%TEMP%\EndfieldCharge\log-YYYYMMDD.txt`（保留 7 天，单日上限 5MB），方便排查问题 |
 
+## 已知缺陷
+
+- **24H2+（build 26100+）的节能模式检测不可用**。
+  `Services/PowerNative.cs` 里的 `GuidEnergySaverStatus` 取值
+  `550e8400-e29b-41d4-a716-446655440000` **没有出处**：
+  Windows SDK 10.0.19041 / 10.0.22621 的 `winnt.h` 里只有
+  `GUID_ENERGY_SAVER_SUBGROUP` / `_BATTERY_THRESHOLD` / `_BRIGHTNESS` / `_POLICY`，
+  整个 `Include` 树里搜不到 `ENERGY_SAVER_STATUS`；而这个值本身是 RFC 4122 的示例 UUID。
+  拿它去调 `RegisterPowerSettingNotification` 收不到任何通知，所以那条路径实际是死的。
+  代码暂时保留并已标注，删除前需要先确认 24H2+ 上正确的替代方式。
+  旧系统（< 24H2）走 `GUID_POWER_SAVING_STATUS` + `GetSystemPowerStatus.SystemStatusFlag`，可用。
+
 ## 运行要求
 
 - Windows 10 1809+ / Windows 11
-- .NET 8 运行时（Release 为框架依赖单文件发布，需安装 [.NET 8 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/8.0)）
+- .NET 10 运行时（Release 为框架依赖单文件发布，需安装 [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)）
 - x64
 
 ## 构建
@@ -43,7 +55,7 @@
 dotnet build -c Debug
 
 # 单测（纯逻辑，Debug 构建即可）
-dotnet test tests\EndfieldCharge.Tests
+dotnet test --project tests\EndfieldCharge.Tests -c Debug
 
 # 发布（单文件 exe，输出到 publish/）
 dotnet publish -c Release -o publish
@@ -52,12 +64,35 @@ dotnet publish -c Release -o publish
 > 正在运行本程序时 `dotnet build -c Release` 会因 apphost 被占用而失败（MSB3027），
 > 先退出托盘里的程序再构建，或改用 `-o <其它目录>` 输出。
 
-> SDK 版本由 `global.json` 钉在 8.0.x（`rollForward: latestFeature`），与本仓库 CI 一致，
-> 避免本地用新 SDK 写了新语法、CI 上编译不过。
-
 > 注意：`PublishSingleFile` 只把托管 dll 打进 exe，SkiaSharp 的 native dll
 > （libSkiaSharp / libHarfBuzzSharp / av_libglesv2）仍需与 exe 同目录 ——
 > 便携分发请打包整个 `publish/` 目录，不要只拷 exe。
+
+### 构建层约定
+
+| 文件 | 作用 |
+|------|------|
+| `global.json` | 钉住 SDK 主版本（`rollForward: latestFeature`），并声明 `test.runner` 用 Microsoft.Testing.Platform |
+| `Directory.Build.props` | 两个工程共享的编译属性：TFM、Nullable、LangVersion、PlatformTarget、`TreatWarningsAsErrors`、`AnalysisLevel=latest-recommended`、`EnforceCodeStyleInBuild` |
+| `Directory.Packages.props` | 中央包管理（CPM）：包版本只写在这里，工程里只写 `PackageReference Include` |
+| `.editorconfig` | 代码风格基线。标成 `warning` 的规则会直接让构建失败 |
+
+几点容易踩的：
+
+- **警告即错误**（`TreatWarningsAsErrors`）在本地与 CI 是同一道闸门，CI 里不再单独传参。
+- **`AnalysisLevel=latest-recommended`** 会打开一批质量规则（区域设置相关的格式化、可索引集合上的
+  LINQ、可释放字段、P/Invoke 字符集等）。`.editorconfig` 里只把「本项目已全部满足且值得守住」的
+  规则标成 `warning`，其余是 `suggestion`，不参与构建。
+- **`IDE0005`（多余的 using）** 要在构建期生效，必须打开 `GenerateDocumentationFile`
+  （Roslyn 的硬性前置条件，dotnet/roslyn#41640）。本项目是应用不是库，顺手关掉了
+  「公开成员缺 XML 注释」的 CS1591；CI 打便携包时会排除这个 `.xml`。
+- **`AllowUnsafeBlocks` 只给主工程**：`Services/PowerNative.cs` 用 `[LibraryImport]`，
+  它的源生成器会产出 unsafe 代码（SYSLIB1062）。测试工程不需要，所以这个许可没放进共享属性。
+- **测试是 xunit v3 + Microsoft.Testing.Platform**：测试工程是 `Exe`，编译产物自己就能跑测试。
+  MTP 模式下 `dotnet test` 必须用 `--project` 指定工程，**在仓库根目录直接敲 `dotnet test`
+  会报「未找到任何测试项目」**（根目录的 `EndfieldCharge.csproj` 不是测试工程，
+  MTP 模式也不会递归子目录）。也可以直接运行
+  `tests\EndfieldCharge.Tests\bin\Debug\net10.0-windows\EndfieldCharge.Tests.exe`。
 
 ### CI / 发布（GitHub Actions）
 
@@ -99,39 +134,63 @@ EndfieldCharge/
 ├─ Animations/
 │  └─ HudAnimations.cs      # 时间线与动画轨道（KeySpline 逐段缓动）
 ├─ Services/
+│  ├─ AlertPolicy.cs        # 低电量 / 充满的提醒判定（纯函数，可单测）
 │  ├─ AutoStart.cs          # 开机自启（HKCU Run 键读写）
 │  ├─ BatteryService.cs     # 电池快照（剩余/满充 mWh、百分比、AC/充电状态）
 │  ├─ Logger.cs             # 文件日志（%TEMP%\EndfieldCharge\，7 天保留）
-│  ├─ PowerNative.cs        # P/Invoke：powrprof、message-only 窗口
+│  ├─ PowerNative.cs        # P/Invoke：powrprof、message-only 窗口（全部 [LibraryImport]）
 │  ├─ PowerWatcher.cs       # 电源变化监听 + 去抖确认
-│  └─ UpdateChecker.cs      # GitHub Releases 更新检查（目标仓库编译期注入）
+│  ├─ UpdateChecker.cs      # GitHub Releases 更新检查（目标仓库编译期注入）
+│  └─ UrlLauncher.cs        # 用系统默认程序打开 URL
 ├─ Settings/
-│  ├─ AppSettings.cs        # 设置模型（缩放/动画微调/位置/显示器/语言/提醒）
+│  ├─ AppSettings.cs        # 设置模型（主构造函数 + 默认值，JSON 源生成序列化）
+│  ├─ SettingsJsonContext.cs# 设置文件的 JSON 源生成上下文
 │  ├─ SettingsManager.cs    # 设置加载与持久化
-│  ├─ SettingsWindow.axaml  # 设置窗口（通用 / 动画 / 通知 / 关于）
+│  ├─ SettingsViewModel.cs  # 设置窗 ViewModel（CommunityToolkit.Mvvm）
+│  ├─ SettingsWindow.axaml  # 设置窗口（通用 / 动画 / 通知 / 关于），全部编译绑定
 │  └─ SettingsWindow.axaml.cs
 ├─ Views/
-│  └─ HudWindow.axaml(.cs)  # HUD 视觉树（胶囊 / 电标 / 标题 / 数字 / 徽章 / 波纹）
+│  ├─ HudWindow.axaml(.cs)  # HUD 视觉树（胶囊 / 电标 / 标题 / 数字 / 徽章 / 波纹）
+│  ├─ AlertWindow.axaml(.cs)# 卡牌风格提醒窗
+│  ├─ MessageBoxWindow.*    # 极简消息框
+│  └─ IHudPreview.cs        # 设置窗预览动画所需的最小 HUD 能力
 ├─ Styles/                  # HUD 配色（单一真源）与图标几何（StreamGeometry）
 ├─ Assets/                  # tray_bolt.png（托盘/窗口图标）+ tray_bolt.ico（exe 图标）
 ├─ tests/
-│  └─ EndfieldCharge.Tests/ # 纯逻辑单测（版本解析 / 百分比 / 提醒判定 / 时间线映射）
+│  └─ EndfieldCharge.Tests/ # 纯逻辑单测（版本解析 / 百分比 / 提醒判定 / 时间线映射 / 设置契约 / 设置窗 VM）
 └─ .github/workflows/       # CI：自动构建便携包 + 打标签发 Release
 ```
 
 ## 动画实现要点
 
-- Avalonia 11 的 `KeyFrame` 使用 **`KeySpline`（贝塞尔控制点）** 做逐段缓动，多关键帧下 `Animation.Easing` 不生效 —— 每段必须显式指定 `KeySpline`，否则该段为线性。
+- Avalonia 的 `KeyFrame` 使用 **`KeySpline`（贝塞尔控制点）** 做逐段缓动，多关键帧下 `Animation.Easing` 不生效 —— 每段必须显式指定 `KeySpline`，否则该段为线性。
 - `Border.HeightProperty`（即 `Layoutable.HeightProperty`）可直接动画，因此胶囊高度的 `60 → 90 → 60` 用独立轨道驱动。
 - 收尾「整体缩小关没」由外层 `ScaleHost` 的 `RenderTransform` 统一缩放，胶囊本身宽度不动。
 - HUD 窗口尺寸只比可见内容大一圈（`560×90 × 全局缩放`）。窗口是 `Topmost` 且背景可命中，开多大就会在插拔那几秒吞掉多大的鼠标点击区域。
 
 ## 托盘菜单为什么用 NativeMenu
 
-Avalonia 11.2 的 `TrayIcon` 只暴露 `Clicked`（左键）；右键由 Win32 后端的私有方法
+`TrayIcon` 只暴露 `Clicked`（左键）；右键由 Win32 后端的私有方法
 `OnRightClicked()` 处理，且**仅在 `Menu` 非空时**才弹菜单（`ITrayIconImpl` 上没有右键事件，
 反射也挂不上）。所以右键菜单走 `TrayIcon.Menu`：弹窗由 Avalonia 渲染
 （`MenuFlyoutPresenter`，样式在 `App.axaml` 里对齐了原来的深色观感）。
+
+## 设置窗为什么用 MVVM
+
+设置窗有 50 多个控件，改造前靠手写代码逐个赋值本地化文案、逐个字段搬运
+Load / Collect、手工同步 6 组「滑块值 → 数值标签」。每加一个设置项要改 5 个地方，
+漏一处就是静默不一致。
+
+现在逻辑全在 `SettingsViewModel` 里：设置值、数值读数、页签状态、状态文案都是可观察属性，
+XAML 走编译绑定（Avalonia 12 默认开启，路径写错在编译期就会失败）；保存 / 检查更新 /
+安装字体 / 播放预览 / 切换页签是 `[RelayCommand]`。
+
+本地化那边把 `Localization` 从静态类改成了可观察单例（`ObservableObject` + `Current`）：
+绑定需要一个带 `INotifyPropertyChanged` 的实例，这样才能写成 `{Binding L.TabGeneral}`，
+而不必在 ViewModel 里再抄一遍几十个属性名。语言切换时 `UseSettings` 调 `NotifyAll()`
+（空属性名按 INPC 约定表示「全部属性已变更」），全部绑定一次性刷新。
+
+HUD 窗仍然保留 code-behind：它由代码驱动时间线动画，硬套 MVVM 只会多一层没有收益的间接。
 
 ## 许可证
 
