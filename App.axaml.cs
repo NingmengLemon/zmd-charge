@@ -18,8 +18,11 @@ public partial class App : Application
     private PowerWatcher? _watcher;
     private HudWindow? _hud;
     private TrayIcon? _tray;
-    private TrayMenuWindow? _trayMenu;
     private SettingsWindow? _settingsWindow;
+    private NativeMenuItem? _menuPreview;
+    private NativeMenuItem? _menuSettings;
+    private NativeMenuItem? _menuCheckUpdate;
+    private NativeMenuItem? _menuExit;
     private AppSettings _settings = new();
     private IClassicDesktopStyleApplicationLifetime? _desktop;
     private DispatcherTimer? _alertTimer;
@@ -90,10 +93,7 @@ public partial class App : Application
         _settings = settings;
         Localization.UseSettings(settings);
         _hud?.ApplySettings(settings);
-
-        // 更新托盘提示
-        if (_tray is not null)
-            _tray.ToolTipText = Localization.TrayTooltip;
+        ApplyTrayLocalization();
     }
 
     // ---------------- 命令行参数 ----------------
@@ -376,15 +376,18 @@ public partial class App : Application
 
     private void SetupTrayIcon()
     {
-        // 自定义菜单（TrayMenuWindow）：左键托盘弹出。
-        // 不设原生 Menu——11.2 中右键仅在 Menu 非空时弹原生菜单，置空后右键无动作。
         _tray = new TrayIcon
         {
             ToolTipText = Localization.TrayTooltip,
             IsVisible = true,
         };
 
-        _tray.Clicked += OnTrayClicked;
+        // 左键：只播放 HUD 动画
+        _tray.Clicked += (_, _) => _ = TriggerHudAsync();
+
+        // 右键：Avalonia 只在 Menu 非空时才弹菜单
+        // （Win32 TrayIconImpl.OnRightClicked 对空菜单直接 return，置空则右键无动作）
+        _tray.Menu = BuildTrayMenu();
 
         try
         {
@@ -400,64 +403,70 @@ public partial class App : Application
         TrayIcon.SetIcons(this, icons);
     }
 
-    private void OnTrayClicked(object? sender, EventArgs e)
+    /// <summary>右键菜单。菜单项文字在语言切换时由 ApplyTrayLocalization 刷新。</summary>
+    private NativeMenu BuildTrayMenu()
     {
-        // 关闭已打开的菜单
-        if (_trayMenu is not null && _trayMenu.IsVisible)
-        {
-            _trayMenu.Close();
-            _trayMenu = null;
+        _menuPreview = new NativeMenuItem { Header = Localization.PreviewHud };
+        _menuPreview.Click += (_, _) => _ = TriggerHudAsync();
+
+        _menuSettings = new NativeMenuItem { Header = Localization.Settings };
+        _menuSettings.Click += (_, _) => OpenSettingsWindow();
+
+        _menuCheckUpdate = new NativeMenuItem { Header = Localization.CheckUpdate };
+        _menuCheckUpdate.Click += async (_, _) => await CheckUpdateFromTrayAsync();
+
+        _menuExit = new NativeMenuItem { Header = Localization.Exit };
+        _menuExit.Click += (_, _) => _desktop?.Shutdown();
+
+        var menu = new NativeMenu();
+        menu.Add(_menuPreview);
+        menu.Add(_menuSettings);
+        menu.Add(_menuCheckUpdate);
+        menu.Add(new NativeMenuItemSeparator());
+        menu.Add(_menuExit);
+        return menu;
+    }
+
+    private void ApplyTrayLocalization()
+    {
+        if (_tray is not null)
+            _tray.ToolTipText = Localization.TrayTooltip;
+
+        if (_menuPreview is not null) _menuPreview.Header = Localization.PreviewHud;
+        if (_menuSettings is not null) _menuSettings.Header = Localization.Settings;
+        if (_menuCheckUpdate is not null) _menuCheckUpdate.Header = Localization.CheckUpdate;
+        if (_menuExit is not null) _menuExit.Header = Localization.Exit;
+    }
+
+    private async Task CheckUpdateFromTrayAsync()
+    {
+        // 对话框需要 owner；_hud 在托盘创建前就已构造，正常不会为空
+        if (_hud is not { } owner)
             return;
-        }
 
-        // 单击托盘图标：立即播放电量预览（真实电池数据，完整三态动画），同时弹出菜单
-        _ = TriggerHudAsync();
-
-        _trayMenu = new TrayMenuWindow();
-        _trayMenu.PreviewClicked += () => { _trayMenu.Close(); _ = TriggerHudAsync(); };
-        _trayMenu.SettingsClicked += () => { _trayMenu.Close(); OpenSettingsWindow(); };
-        _trayMenu.CheckUpdateClicked += async () =>
+        try
         {
-            _trayMenu.Close();
-            _trayMenu = null;
-
-            // 对话框需要 owner；_hud 在托盘创建前就已构造，正常不会为空
-            if (_hud is not { } owner)
-                return;
-
-            try
+            var (hasUpdate, version, url) = await UpdateChecker.CheckAsync();
+            if (hasUpdate && url is not null)
             {
-                var (hasUpdate, version, url) = await UpdateChecker.CheckAsync();
-                if (hasUpdate && url is not null)
-                {
-                    var result = await MessageBox.Show(
-                        owner,
-                        Localization.UpdateMsg(version ?? "?"),
-                        Localization.UpdateTitle,
-                        MessageBoxButton.OkCancel);
+                var result = await MessageBox.Show(
+                    owner,
+                    Localization.UpdateMsg(version ?? "?"),
+                    Localization.UpdateTitle,
+                    MessageBoxButton.OkCancel);
 
-                    if (result == MessageBoxResult.Ok)
-                        Platform.Start(url);
-                }
-                else
-                {
-                    await ShowAlertAsync(Localization.CheckUpdate, Localization.UpToDate);
-                }
+                if (result == MessageBoxResult.Ok)
+                    Platform.Start(url);
             }
-            catch
+            else
             {
-                await ShowAlertAsync(Localization.CheckUpdate, Localization.UpdateCheckFailed);
+                await ShowAlertAsync(Localization.CheckUpdate, Localization.UpToDate);
             }
-        };
-        _trayMenu.ExitClicked += () => { _trayMenu.Close(); _desktop?.Shutdown(); };
-
-        // 刷新本地化文字
-        _trayMenu.MenuPreviewText.Text = Localization.PreviewHud;
-        _trayMenu.MenuSettingsText.Text = Localization.Settings;
-        _trayMenu.MenuCheckUpdateText.Text = Localization.CheckUpdate;
-        _trayMenu.MenuExitText.Text = Localization.Exit;
-
-        _trayMenu.ShowAtTray();
+        }
+        catch
+        {
+            await ShowAlertAsync(Localization.CheckUpdate, Localization.UpdateCheckFailed);
+        }
     }
 
     private void OpenSettingsWindow(string initialTab = "General")

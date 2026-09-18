@@ -5,6 +5,18 @@
 
   <Application.Styles>
     <FluentTheme />
+
+    <!-- 托盘右键菜单：Avalonia 的托盘弹窗用的是 MenuFlyoutPresenter
+         （Avalonia.Win32 里私有的 TrayIconMenuFlyoutPresenter 把 StyleKeyOverride
+         指向了 typeof(MenuFlyoutPresenter)，所以这里的选择器能命中它）。
+         取值对齐原本自绘菜单的深色观感。 -->
+    <Style Selector="MenuFlyoutPresenter">
+      <Setter Property="Background" Value="#1E1E20"/>
+      <Setter Property="BorderBrush" Value="#2A2A2C"/>
+      <Setter Property="BorderThickness" Value="1"/>
+      <Setter Property="CornerRadius" Value="10"/>
+      <Setter Property="Padding" Value="6"/>
+    </Style>
   </Application.Styles>
 
   <Application.Resources>
