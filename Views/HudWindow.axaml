@@ -7,7 +7,7 @@
         Width="560" Height="90"
         Title="EndfieldCharge"
 
-        SystemDecorations="None"
+        WindowDecorations="None"
         Background="Transparent"
 
         Topmost="True"

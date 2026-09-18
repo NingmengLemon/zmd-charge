@@ -474,7 +474,7 @@ public static class MessageBox
             Background = new SolidColorBrush(Color.Parse("#1E1E1E")),
             Foreground = Brushes.White,
             CanResize = false,
-            SystemDecorations = SystemDecorations.None,
+            WindowDecorations = WindowDecorations.None,
             FontFamily = new FontFamily("HarmonyOS Sans SC, HarmonyOS Sans, Inter, Microsoft YaHei UI, sans-serif"),
         };
 

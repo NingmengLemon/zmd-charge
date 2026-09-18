@@ -18,15 +18,16 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         # 需要完整 tag 历史：主干构建用 `git describe --tags --abbrev=0` 取最近 tag 作版本基线
         fetch-depth: 0
 
+    # SDK 版本以 global.json 为唯一真源，避免 CI 与本地各钉一个版本
     - name: Setup .NET
-      uses: actions/setup-dotnet@v4
+      uses: actions/setup-dotnet@v6
       with:
-        dotnet-version: '8.0.x'
+        global-json-file: global.json
 
     # ---- 版本号与更新源 ----
     # 版本号必须在 build 之前解析：程序集版本参与编译，应用内「检查更新」靠它比较。
@@ -87,7 +88,7 @@ jobs:
         Remove-Item $stage -Recurse
 
     - name: Upload build artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: EndfieldCharge-${{ steps.ver.outputs.version }}
         path: EndfieldCharge-*-portable.zip
