@@ -19,6 +19,9 @@ public partial class AlertWindow : Window
     private static readonly TimeSpan HoldDuration = TimeSpan.FromSeconds(4);
     private static readonly TimeSpan FadeOutDuration = TimeSpan.FromMilliseconds(120);
 
+    /// <summary>入场时的起始缩放。要跟 <see cref="ShowAsync"/> 里那条缩放轨道保持一致。</summary>
+    private const double EnterScale = 0.92d;
+
     public AlertWindow()
     {
         InitializeComponent();
@@ -38,32 +41,51 @@ public partial class AlertWindow : Window
 
         // 入场起点：透明 + 略小，随后淡入放大
         alert.Opacity = 0;
-        alert.RenderTransform = new ScaleTransform(0.92, 0.92);
+        alert.RenderTransform = new ScaleTransform(EnterScale, EnterScale);
         alert.RenderTransformOrigin = new RelativePoint(0.5, 0.5, RelativeUnit.Relative);
 
         alert.Show();
 
-        await FadeAsync(alert, 0d, 1d, FadeInDuration, new QuadraticEaseOut());
+        // 缩放必须和透明度一起动：只把 RenderTransform 设成 0.92 而不推回 1.0 的话，
+        // 提醒窗会永远以 92% 显示（实测窗口 547x225 物理，而声明的是 340x140 逻辑 × 1.75）。
+        await AnimateAsync(alert, FadeInDuration, new QuadraticEaseOut(),
+            (Visual.OpacityProperty, 0d, 1d),
+            (ScaleTransform.ScaleXProperty, EnterScale, 1d),
+            (ScaleTransform.ScaleYProperty, EnterScale, 1d));
+
         await Task.Delay(HoldDuration);
-        await FadeAsync(alert, 1d, 0d, FadeOutDuration, new QuadraticEaseIn());
+
+        await AnimateAsync(alert, FadeOutDuration, new QuadraticEaseIn(),
+            (Visual.OpacityProperty, 1d, 0d));
 
         if (alert.IsVisible)
             alert.Close();
     }
 
-    private static Task FadeAsync(Animatable target, double from, double to, TimeSpan duration, Easing easing)
+    /// <summary>跑一条多轨道动画：每条轨道给 (属性, 起始值, 结束值)。</summary>
+    private static Task AnimateAsync(
+        Animatable target,
+        TimeSpan duration,
+        Easing easing,
+        params (AvaloniaProperty Property, double From, double To)[] tracks)
     {
+        var start = new KeyFrame { Cue = new Cue(0d) };
+        var end = new KeyFrame { Cue = new Cue(1d) };
+
+        foreach (var (property, from, to) in tracks)
+        {
+            start.Setters.Add(new Setter(property, from));
+            end.Setters.Add(new Setter(property, to));
+        }
+
         var animation = new Animation
         {
             Duration = duration,
             FillMode = FillMode.Forward,
             Easing = easing,
-            Children =
-            {
-                new KeyFrame { Cue = new Cue(0d), Setters = { new Setter(Visual.OpacityProperty, from) } },
-                new KeyFrame { Cue = new Cue(1d), Setters = { new Setter(Visual.OpacityProperty, to) } },
-            },
         };
+        animation.Children.Add(start);
+        animation.Children.Add(end);
 
         return animation.RunAsync(target);
     }
