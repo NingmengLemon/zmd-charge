@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
-namespace EndfieldCharge.Services;
+namespace EndfieldCharge.Services.Windows;
 
 /// <summary>
 /// Windows 电源 / 电池相关的原生 API。

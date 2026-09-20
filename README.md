@@ -8,32 +8,38 @@
 
 ## 下载
 
-从 [Releases](https://github.com/NingmengLemon/zmd-charge/releases) 下载 `EndfieldCharge-x.y.z-portable.zip`，
-解压即用（无安装器，不留卸载项）。
+从 [Releases](https://github.com/NingmengLemon/zmd-charge/releases) 下载：
+
+| 平台 | 文件 |
+|------|------|
+| Windows x64 | `EndfieldCharge-x.y.z-win-x64.zip` |
+| Linux x64 | `EndfieldCharge-x.y.z-linux-x64.tar.gz` |
+
+解压即用（无安装器，不留卸载项）。Linux 包用 `tar.gz` 而不是 `zip`，因为 tar 保留可执行位。
 
 ## 功能
 
 | 功能 | 说明 |
 |------|------|
-| 电量显示 | 剩余 / 满充容量（mWh，整数）与百分比，读取 `CallNtPowerInformation`，WMI 兜底 |
-| 电源监听 | `RegisterPowerSettingNotification` 订阅 GUID_ACDC_POWER_SOURCE，2s 轮询兜底，400ms 双向去抖（过滤 Windows 满电瞬时抖动） |
+| 电量显示 | 剩余 / 满充容量（mWh，整数）与百分比。Windows 读 `CallNtPowerInformation`（WMI 兜底），Linux 读 sysfs |
+| 电源监听 | Windows 用 `RegisterPowerSettingNotification` 订阅 GUID_ACDC_POWER_SOURCE，2s 轮询兜底，400ms 双向去抖（过滤 Windows 满电瞬时抖动）；Linux 是 2s 纯轮询 |
 | 低电量变色 | 电量低于设置里的低电量阈值时黄绿电量圈变红（默认 20%，#FF4D4F） |
 | 提醒通知 | 低电量提醒（阈值可调 5–40%）与充满提醒（≥99%），卡牌风格弹窗，4s 自动消失。由 30s 独立采样驱动，插拔瞬间额外复核一次 |
 | 设置窗口 | 全局缩放（0.4–1.2）、显示时长（3–10s）、HUD 位置（顶部居中/靠右/靠左）、显示器选择、语言、开机自启，保存即生效并持久化 |
 | 托盘图标 | 左键单击播放一次 HUD 动画，右键弹出菜单（预览 / 设置 / 检查更新 / 退出） |
 | 动画微调 | 设置窗口「动画」页实时预览并微调时长 / 回弹 / 波纹参数，保存即生效并持久化 |
-| 节能模式提示 | 开 / 关节能（省电）模式时弹出对应 HUD。当前只有旧系统的路径可用，见下方「已知缺陷」 |
+| 节能模式提示 | 开 / 关节能（省电）模式时弹出对应 HUD。Windows 旧系统的路径可用，见「已知缺陷」；**Linux 上不支持**（没有跨桌面环境的统一接口） |
 | 检查更新 | 读取 GitHub Releases API，比较程序集版本，一键跳转下载页。目标仓库由 CI 用 `github.repository` 注入，本地构建退回本仓库 |
 | 多语言 | 中文 / 英文，默认跟随系统，可在设置中手动切换 |
-| 开机自启 | 设置窗口「通用」页开关，写 `HKCU\...\CurrentVersion\Run`（当前用户级，无需管理员） |
+| 开机自启 | 设置窗口「通用」页开关。Windows 写 `HKCU\...\CurrentVersion\Run`，Linux 写 XDG autostart，都是当前用户级、无需管理员 |
 | 单实例 | 重复启动不会开出第二个常驻进程，而是让已有实例弹一次 HUD |
 | 统一图标 | 托盘 / 各窗口 / exe 统一使用 `Assets\tray_bolt` 图标 |
-| 日志 | `%TEMP%\EndfieldCharge\log-YYYYMMDD.txt`（保留 7 天，单日上限 5MB），方便排查问题 |
+| 日志 | `%TEMP%\EndfieldCharge\log-YYYYMMDD.txt`（Linux 上即 `/tmp/EndfieldCharge/`；保留 7 天，单日上限 5MB） |
 
 ## 已知缺陷
 
 - **24H2+（build 26100+）的节能模式检测不可用**。
-  `Services/PowerNative.cs` 里的 `GuidEnergySaverStatus` 取值
+  `Services/Windows/PowerNative.cs` 里的 `GuidEnergySaverStatus` 取值
   `550e8400-e29b-41d4-a716-446655440000` **没有出处**：
   Windows SDK 10.0.19041 / 10.0.22621 的 `winnt.h` 里只有
   `GUID_ENERGY_SAVER_SUBGROUP` / `_BATTERY_THRESHOLD` / `_BRIGHTNESS` / `_POLICY`，
@@ -44,8 +50,10 @@
 
 ## 运行要求
 
-- Windows 10 1809+ / Windows 11
-- .NET 10 运行时（Release 为框架依赖单文件发布，需安装 [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)）
+- Windows 10 1809+ / Windows 11，或带桌面环境的 Linux（x64）
+- .NET 10 运行时（Release 为框架依赖单文件发布）
+  - Windows 需要 [.NET 10 Desktop Runtime](https://dotnet.microsoft.com/download/dotnet/10.0)
+  - Linux 需要 .NET 10 Runtime，桌面环境还需提供 X11 或 Wayland 与一个状态栏宿主（见「平台差异」）
 - x64
 
 ## 构建
@@ -54,19 +62,20 @@
 # 调试
 dotnet build -c Debug
 
-# 单测（纯逻辑，Debug 构建即可）
-dotnet test --project tests\EndfieldCharge.Tests -c Debug
+# 单测（纯逻辑，Debug 构建即可）。路径用正斜杠，Windows 与 Linux 都吃
+dotnet test --project tests/EndfieldCharge.Tests -c Debug
 
-# 发布（单文件 exe，输出到 publish/）
+# 发布（单文件，输出到 publish/）。Release 的 RID 按构建主机自动选 win-x64 / linux-x64
 dotnet publish -c Release -o publish
 ```
 
 > 正在运行本程序时 `dotnet build -c Release` 会因 apphost 被占用而失败（MSB3027），
 > 先退出托盘里的程序再构建，或改用 `-o <其它目录>` 输出。
 
-> 注意：`PublishSingleFile` 只把托管 dll 打进 exe，SkiaSharp 的 native dll
-> （libSkiaSharp / libHarfBuzzSharp / av_libglesv2）仍需与 exe 同目录 ——
-> 便携分发请打包整个 `publish/` 目录，不要只拷 exe。
+> 注意：`PublishSingleFile` 只把托管 dll 打进可执行文件，SkiaSharp 的 native 库仍需与它同目录
+> —— Windows 上是 `libSkiaSharp.dll` / `libHarfBuzzSharp.dll` / `av_libglesv2.dll`，
+> Linux 上是 `libSkiaSharp.so` / `libHarfBuzzSharp.so`（Linux 侧没有 ANGLE 那个）。
+> 便携分发请打包整个 `publish/` 目录，不要只拷可执行文件。
 
 ### 构建层约定
 
@@ -86,26 +95,29 @@ dotnet publish -c Release -o publish
 - **`IDE0005`（多余的 using）** 要在构建期生效，必须打开 `GenerateDocumentationFile`
   （Roslyn 的硬性前置条件，dotnet/roslyn#41640）。本项目是应用不是库，顺手关掉了
   「公开成员缺 XML 注释」的 CS1591；CI 打便携包时会排除这个 `.xml`。
-- **`AllowUnsafeBlocks` 只给主工程**：`Services/PowerNative.cs` 用 `[LibraryImport]`，
+- **`AllowUnsafeBlocks` 只给主工程**：`Services/Windows/PowerNative.cs` 用 `[LibraryImport]`，
   它的源生成器会产出 unsafe 代码（SYSLIB1062）。测试工程不需要，所以这个许可没放进共享属性。
 - **测试是 xunit v3 + Microsoft.Testing.Platform**：测试工程是 `Exe`，编译产物自己就能跑测试。
   MTP 模式下 `dotnet test` 必须用 `--project` 指定工程，**在仓库根目录直接敲 `dotnet test`
   会报「未找到任何测试项目」**（根目录的 `EndfieldCharge.csproj` 不是测试工程，
   MTP 模式也不会递归子目录）。也可以直接运行
-  `tests\EndfieldCharge.Tests\bin\Debug\net10.0-windows\EndfieldCharge.Tests.exe`。
+  `tests/EndfieldCharge.Tests/bin/Debug/net10.0/EndfieldCharge.Tests`（Windows 上带 `.exe`）。
 
 ### CI / 发布（GitHub Actions）
 
-推送到 `main` 分支会自动构建便携版 zip（Actions 页面可下载 artifact）。
-推送 `v*` 标签（如 `v1.0.0`）会额外创建 GitHub Release，并把标签版本号写入
-程序集版本与压缩包文件名：
+推送到 `main` 分支会自动在 **Windows 与 Linux 两个 runner 上各构建一遍**
+（matrix，`fail-fast: false`，一个平台挂了也能看到另一个的结果），Actions 页面可下载 artifact。
+推送 `v*` 标签（如 `v1.2.0`）会额外创建 GitHub Release，并把两个平台的包都附上：
 
 ```bash
-git tag v1.0.0
-git push origin v1.0.0
+git tag v1.2.0
+git push origin v1.2.0
 ```
 
-主干构建的版本号是 `<最近 tag>.<run_number>`（如 `1.1.1.500`），第 4 段让它比同名
+发 Release 是单独一个 job（`needs: build`）：两个平台的构建是并发跑的，
+各自去创建同一个 Release 会打架，所以先都上传 artifact，再由这个 job 统一下载并发布。
+
+主干构建的版本号是 `<最近 tag>.<run_number>`（如 `1.2.0.500`），第 4 段让它比同名
 tag 更新 —— 否则 `0.0.N < 1.1.1` 会让应用一直提示更新，并把用户带到比当前代码更旧的发布版。
 
 同一个步骤还会把 `github.repository` 注入程序集元数据（`UpdateRepoOwner` /
@@ -135,13 +147,25 @@ EndfieldCharge/
 │  └─ HudAnimations.cs      # 时间线与动画轨道（KeySpline 逐段缓动）
 ├─ Services/
 │  ├─ AlertPolicy.cs        # 低电量 / 充满的提醒判定（纯函数，可单测）
-│  ├─ AutoStart.cs          # 开机自启（HKCU Run 键读写）
-│  ├─ BatteryService.cs     # 电池快照（剩余/满充 mWh、百分比、AC/充电状态）
-│  ├─ Logger.cs             # 文件日志（%TEMP%\EndfieldCharge\，7 天保留）
-│  ├─ PowerNative.cs        # P/Invoke：powrprof、message-only 窗口（全部 [LibraryImport]）
-│  ├─ PowerWatcher.cs       # 电源变化监听 + 去抖确认
+│  ├─ AutoStart.cs          # 开机自启门面（按 OS 分派到下面两个实现）
+│  ├─ BatteryService.cs     # 电池快照与读取门面（按 OS 分派）
+│  ├─ IPowerWatcher.cs      # 电源监听接口 + 工厂
+│  ├─ Logger.cs             # 文件日志（临时目录，7 天保留）
+│  ├─ ShowHudChannel.cs     # 唤醒已有实例的通路（抽象 + 工厂）
 │  ├─ UpdateChecker.cs      # GitHub Releases 更新检查（目标仓库编译期注入）
-│  └─ UrlLauncher.cs        # 用系统默认程序打开 URL
+│  ├─ UrlLauncher.cs        # 用系统默认程序打开 URL
+│  ├─ WmiBatteryStatus.cs   # Win32_Battery 状态码语义（纯函数，平台无关）
+│  ├─ Windows/              # Windows 专有实现，全部 [SupportedOSPlatform("windows")]
+│  │  ├─ PowerNative.cs     #   P/Invoke：powrprof、message-only 窗口（[LibraryImport]）
+│  │  ├─ WindowsBatteryReader.cs  # powrprof 主路径 + WMI 兜底
+│  │  ├─ WindowsPowerWatcher.cs   # 电源通知 + 去抖确认 + 轮询兜底
+│  │  ├─ WindowsAutoStart.cs      # HKCU Run 键
+│  │  └─ WindowsShowHudChannel.cs # 命名 EventWaitHandle
+│  └─ Linux/                # Linux 专有实现
+│     ├─ LinuxBatteryReader.cs    # sysfs（根路径可注入，便于用 fixture 单测）
+│     ├─ LinuxPowerWatcher.cs     # 纯轮询
+│     ├─ LinuxAutoStart.cs        # XDG autostart
+│     └─ LinuxShowHudChannel.cs   # Unix 域套接字
 ├─ Settings/
 │  ├─ AppSettings.cs        # 设置模型（主构造函数 + 默认值，JSON 源生成序列化）
 │  ├─ SettingsJsonContext.cs# 设置文件的 JSON 源生成上下文
@@ -155,11 +179,62 @@ EndfieldCharge/
 │  ├─ MessageBoxWindow.*    # 极简消息框
 │  └─ IHudPreview.cs        # 设置窗预览动画所需的最小 HUD 能力
 ├─ Styles/                  # HUD 配色（单一真源）与图标几何（StreamGeometry）
-├─ Assets/                  # tray_bolt.png（托盘/窗口图标）+ tray_bolt.ico（exe 图标）
+├─ Assets/                  # tray_bolt.png（托盘/窗口图标）+ tray_bolt.ico（Windows exe 图标）
 ├─ tests/
-│  └─ EndfieldCharge.Tests/ # 纯逻辑单测（版本解析 / 百分比 / 提醒判定 / 时间线映射 / 设置契约 / 设置窗 VM）
-└─ .github/workflows/       # CI：自动构建便携包 + 打标签发 Release
+│  └─ EndfieldCharge.Tests/ # 纯逻辑单测（版本解析 / 百分比 / 提醒判定 / 时间线映射 /
+│                           #   设置契约 / 设置窗 VM / Linux sysfs 电池读取）
+└─ .github/workflows/       # CI：两个平台各构建一遍 + 打标签发 Release
 ```
+
+## 平台差异
+
+Windows 与 Linux 共用一份代码（单 TFM `net10.0`）。平台专有实现分别放在
+`Services/Windows` 与 `Services/Linux`，由 `OperatingSystem.IsWindows()` 分派；
+`[SupportedOSPlatform]` 配合编译期的 CA1416 负责把漏标注的地方抓出来。
+这比双 TFM 少一套条件编译，代价是平台专有 API 必须显式守卫。
+
+| 关注点 | Windows | Linux |
+|--------|---------|-------|
+| 电池读取 | powrprof `CallNtPowerInformation`，失败退回 WMI `Win32_Battery` | `/sys/class/power_supply`：优先 `energy_*`（µWh），没有就退回 `charge_*`（µAh）× `voltage_now`（µV）；不依赖 UPower |
+| 电源变化 | `RegisterPowerSettingNotification` + 2s 轮询兜底 + 400ms 双向去抖 | 2s 轮询。sysfs 是被动读值，没有 Windows 那种瞬时误报，所以不需要去抖 |
+| 开机自启 | `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` | XDG autostart：`~/.config/autostart/endfieldcharge.desktop` |
+| 单实例 | 命名 Mutex | 命名 Mutex（跨进程语义与 Windows 一致，实测过） |
+| 唤醒已有实例 | 命名 `EventWaitHandle` | Unix 域套接字（`$XDG_RUNTIME_DIR/endfieldcharge.sock`，没有该变量时退回临时目录） |
+| 省电模式提示 | 可用（旧系统路径） | **不支持**，没有跨桌面环境的统一接口 |
+
+单实例那两行值得单独说：**命名 `EventWaitHandle` 与命名 `Semaphore` 在 Linux 上会抛
+`PlatformNotSupportedException`**，只有命名 `Mutex` 例外地可用，所以唤醒通路必须分平台。
+
+### Linux 侧已验证
+
+在 Debian 13（无头，Xvfb）与 Arch Linux + KDE Plasma（真机，2880x1800、缩放 1.75）上实测：
+
+- 构建与 109 个单测、Release 发布（RID 正确解析为 `linux-x64`）、打包出的 tar.gz 解压后可直接运行
+- 单实例判定（命名 Mutex）与唤醒通路（Unix 域套接字）。上一次异常退出留下的套接字文件
+  会在下次启动时被清掉，实测带残留套接字能正常重启
+- HUD 窗口尺寸与定位：KDE 上实测窗口落在物理 (1048, 4)、784x126，即逻辑 448x72 且水平居中
+  （(2880-784)/2 = 1048），分数缩放 1.75 下换算正确
+- 窗口透明（胶囊周围能看到桌面壁纸）与 `Topmost`（压在其它窗口之上）
+- 托盘图标：启动后 `org.kde.StatusNotifierWatcher` 的注册项多出本应用，退出后消失
+- 真实电池：`BAT0` 的 `energy_now`/`energy_full` = 99900000/99900000 µWh 与 `capacity`=100
+  被正确读成 99900/99900 mWh 与 100%
+
+### Linux 需要 X11 或 Xwayland
+
+Avalonia 的 `UsePlatformDetect()` 在 Linux 上**只加载 X11 后端**
+（`Avalonia.Desktop` 的依赖里根本没有 `Avalonia.Wayland`），所以本应用在 Linux 上跑的是 X11，
+在 Wayland 桌面上实际是走 Xwayland。实测：只给 `WAYLAND_DISPLAY`、不给 `DISPLAY` 时，
+启动会直接抛 `XOpenDisplay failed`。
+
+这是有意保留的，不是遗漏：**Wayland 没有让客户端自己设置窗口位置的协议**，而 HUD 的核心行为
+就是"顶部居中弹一下"，原生 Wayland 下做不到（要靠 wlr-layer-shell 之类的合成器协议，
+Avalonia 没有暴露）。KDE / GNOME 等主流桌面都自带 Xwayland，所以这条路径可用；
+纯 Wayland 且不带 Xwayland 的环境目前不支持。
+
+### 尚未验证
+
+- 多显示器。测试机只有一块屏。
+- GNOME 上的托盘。GNOME 默认不显示托盘图标，可能要装 AppIndicator 扩展。
 
 ## 动画实现要点
 
@@ -174,6 +249,9 @@ EndfieldCharge/
 `OnRightClicked()` 处理，且**仅在 `Menu` 非空时**才弹菜单（`ITrayIconImpl` 上没有右键事件，
 反射也挂不上）。所以右键菜单走 `TrayIcon.Menu`：弹窗由 Avalonia 渲染
 （`MenuFlyoutPresenter`，样式在 `App.axaml` 里对齐了原来的深色观感）。
+
+上面这段是 Windows 后端的行为。Linux 上 Avalonia 走的是另一套（DBus StatusNotifierItem），
+`TrayIcon.Menu` 同样有效，但图标能不能显示取决于桌面环境有没有提供状态栏宿主。
 
 ## 设置窗为什么用 MVVM
 

@@ -8,8 +8,6 @@
     <OutputType>WinExe</OutputType>
     <!-- SettingsWindow 只在代码中带参构造，XAML 运行时加载器警告为误报 -->
     <NoWarn>$(NoWarn);AVLN3001</NoWarn>
-    <ApplicationManifest>app.manifest</ApplicationManifest>
-    <ApplicationIcon>Assets\tray_bolt.ico</ApplicationIcon>
     <AssemblyName>EndfieldCharge</AssemblyName>
     <RootNamespace>EndfieldCharge</RootNamespace>
     <Authors>Lenkmat</Authors>
@@ -20,16 +18,29 @@
     <PublishSingleFile Condition="'$(Configuration)'=='Release'">true</PublishSingleFile>
     <SelfContained Condition="'$(Configuration)'=='Release'">false</SelfContained>
     <!-- 无条件下发给 restore：CI 里 restore 不带 -c Release，若只有条件 RuntimeIdentifier，
-         assets 里就不会有 net10.0-windows/win-x64 目标，build/publish 会报
-         "Assets file doesn't have a target for 'net10.0-windows/win-x64'" -->
-    <RuntimeIdentifiers>win-x64</RuntimeIdentifiers>
-    <RuntimeIdentifier Condition="'$(Configuration)'=='Release'">win-x64</RuntimeIdentifier>
+         assets 里就不会有 RID 目标，build/publish 会报
+         "Assets file doesn't have a target for '...'"。两个平台都列上，
+         实际用哪个由下面按构建主机选。 -->
+    <RuntimeIdentifiers>win-x64;linux-x64</RuntimeIdentifiers>
+    <!-- Release 按**构建主机**挑 RID：本仓库各平台在各自机器 / runner 上原生发布，不做交叉编译。
+         要用别的 RID 在命令行传 -r 覆盖即可。 -->
+    <RuntimeIdentifier Condition="'$(Configuration)'=='Release' AND $([MSBuild]::IsOSPlatform('Windows'))">win-x64</RuntimeIdentifier>
+    <RuntimeIdentifier Condition="'$(Configuration)'=='Release' AND $([MSBuild]::IsOSPlatform('Linux'))">linux-x64</RuntimeIdentifier>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
 
-    <!-- Services/PowerNative.cs 用 [LibraryImport]，它的源生成器会产出 unsafe 代码
+    <!-- Services/Windows/PowerNative.cs 用 [LibraryImport]，它的源生成器会产出 unsafe 代码
          （SYSLIB1062 明确要求打开这个开关）。只给需要它的主工程开，不放共享属性里，
          免得测试工程也白白获得 unsafe 许可。我们自己不写 unsafe 代码。 -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <!-- 目标是不是 Windows：有 RID 时看 RID，没 RID（Debug 构建）时看构建主机。
+       app.manifest 与 .ico 都是 Windows 专有概念，Linux 上带上没有意义。 -->
+  <PropertyGroup>
+    <_TargetsWindows Condition="'$(RuntimeIdentifier)' != '' AND $(RuntimeIdentifier.StartsWith('win'))">true</_TargetsWindows>
+    <_TargetsWindows Condition="'$(RuntimeIdentifier)' == '' AND $([MSBuild]::IsOSPlatform('Windows'))">true</_TargetsWindows>
+    <ApplicationManifest Condition="'$(_TargetsWindows)' == 'true'">app.manifest</ApplicationManifest>
+    <ApplicationIcon Condition="'$(_TargetsWindows)' == 'true'">Assets\tray_bolt.ico</ApplicationIcon>
   </PropertyGroup>
 
   <!-- ============================================================

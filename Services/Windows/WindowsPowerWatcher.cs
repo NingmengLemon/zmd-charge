@@ -1,7 +1,7 @@
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
-namespace EndfieldCharge.Services;
+namespace EndfieldCharge.Services.Windows;
 
 /// <summary>
 /// 电源来源（交流 / 电池）变化监听。
@@ -13,7 +13,7 @@ namespace EndfieldCharge.Services;
 /// 注意：事件在后台线程上触发，订阅方需自行切回 UI 线程。
 /// </summary>
 [SupportedOSPlatform("windows")]
-public sealed class PowerWatcher : IDisposable
+internal sealed class WindowsPowerWatcher : IPowerWatcher
 {
     private const string ClassName = "EndfieldCharge_PowerMsgWindow";
     private const uint WmDestroy = 0x0002;
@@ -55,7 +55,7 @@ public sealed class PowerWatcher : IDisposable
     private volatile bool _stopping;
     private bool _disposed;
 
-    public PowerWatcher()
+    public WindowsPowerWatcher()
     {
         // 保持委托存活，防止被 GC 回收后 WndProc 崩溃
         _wndProc = WndProc;

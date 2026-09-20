@@ -36,6 +36,9 @@
   <Color x:Key="Dialog.Body">#FFC8C8C8</Color>
   <Color x:Key="Dialog.MessageBox">#FF1E1E1E</Color>
   <Color x:Key="Dialog.ButtonText">#FF1E1E1E</Color>
+  <!-- 窗口边缘。刻意自己画而不是交给窗口管理器：WindowDecorations="BorderOnly"
+       在 KDE 下会被 KWin 用主题色描一圈（浅色主题就是一条白边），和深色卡片打架。 -->
+  <Color x:Key="Dialog.Edge">#FF2A2A2C</Color>
 
   <!-- ==== 无衬线字体族（Inter 优先，中文回退到系统黑体，均无描边） ==== -->
   <FontFamily x:Key="Hud.FontFamily">"HarmonyOS Sans SC", "HarmonyOS Sans", Inter, "Microsoft YaHei UI", "PingFang SC", sans-serif</FontFamily>

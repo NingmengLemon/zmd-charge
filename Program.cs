@@ -1,14 +1,16 @@
 using Avalonia;
+using EndfieldCharge.Services;
 
 namespace EndfieldCharge;
 
 internal class Program
 {
+    /// <summary>
+    /// 单实例判定用的命名 Mutex。
+    /// 命名 Mutex 在 Windows 与 Linux 上都可用，且跨进程语义一致（Linux 上实测过
+    /// createdNew 第二次为 false），所以这里不需要分平台。
+    /// </summary>
     private const string SingleInstanceMutexName = @"Local\EndfieldCharge_SingleInstance_7C1D";
-
-    /// <summary>第二个实例用它请求已有实例弹一次 HUD。没有这条通路时，
-    /// 重复启动只会静默退出，用户完全不知道程序在不在跑。</summary>
-    internal const string ShowHudEventName = @"Local\EndfieldCharge_ShowHud_7C1D";
 
     [STAThread]
     public static void Main(string[] args)
@@ -18,28 +20,12 @@ internal class Program
 
         if (!createdNew)
         {
-            RequestExistingInstanceShowHud();
+            ShowHudChannel.TrySignalExistingInstance();
             return;
         }
 
         BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
         GC.KeepAlive(mutex);
-    }
-
-    private static void RequestExistingInstanceShowHud()
-    {
-        try
-        {
-            if (EventWaitHandle.TryOpenExisting(ShowHudEventName, out var show))
-            {
-                using (show)
-                    show.Set();
-            }
-        }
-        catch
-        {
-            // 拿不到事件就保持原来的"静默退出"
-        }
     }
 
     /// <summary>Avalonia 配置入口，设计器也会用到，勿删。</summary>

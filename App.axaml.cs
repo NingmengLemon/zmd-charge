@@ -13,7 +13,7 @@ using EndfieldCharge.Views;
 namespace EndfieldCharge;
 
 /// <summary>
-/// CA1001：本类确实持有 IDisposable 字段（PowerWatcher / TrayIcon / EventWaitHandle），
+/// CA1001：本类确实持有 IDisposable 字段（IPowerWatcher / TrayIcon / ShowHudChannel），
 /// 但它们的释放时机是 ApplicationLifetime 的 Exit（OnDesktopExit），而不是 IDisposable。
 /// Avalonia 的 Application 不是 IDisposable，自己实现一个只会多一层没有调用保证的间接。
 /// </summary>
@@ -21,7 +21,7 @@ namespace EndfieldCharge;
     Justification = "释放统一走 ApplicationLifetime.Exit -> OnDesktopExit，这是框架给的生命周期钩子。")]
 public partial class App : Application
 {
-    private PowerWatcher? _watcher;
+    private IPowerWatcher? _watcher;
     private HudWindow? _hud;
     private TrayIcon? _tray;
     private SettingsWindow? _settingsWindow;
@@ -32,8 +32,7 @@ public partial class App : Application
     private AppSettings _settings = new();
     private IClassicDesktopStyleApplicationLifetime? _desktop;
     private DispatcherTimer? _alertTimer;
-    private EventWaitHandle? _showHudEvent;
-    private Thread? _showHudThread;
+    private ShowHudChannel? _showHudChannel;
     private volatile bool _exiting;
     private bool _lastLowBatteryNotified;
     private bool _lastFullChargeNotified;
@@ -147,7 +146,7 @@ public partial class App : Application
 
     private void StartPowerWatching()
     {
-        _watcher = new PowerWatcher();
+        _watcher = PowerWatcherFactory.Create();
 
         _watcher.PowerSourceChanged += (_, acOnline) =>
         {
@@ -272,33 +271,14 @@ public partial class App : Application
 
     private void StartShowHudListener()
     {
-        try
+        _showHudChannel = ShowHudChannel.Create();
+        _showHudChannel.StartListening(() =>
         {
-            _showHudEvent = new EventWaitHandle(
-                initialState: false, EventResetMode.AutoReset, Program.ShowHudEventName);
-        }
-        catch (Exception ex)
-        {
-            Logger.Error(ex);
-            return;
-        }
+            if (_exiting)
+                return;
 
-        _showHudThread = new Thread(() =>
-        {
-            while (true)
-            {
-                _showHudEvent!.WaitOne();
-                if (_exiting)
-                    return;
-
-                Dispatcher.UIThread.Post(() => _ = TriggerHudAsync());
-            }
-        })
-        {
-            IsBackground = true,
-            Name = "ShowHudListener",
-        };
-        _showHudThread.Start();
+            Dispatcher.UIThread.Post(() => _ = TriggerHudAsync());
+        });
     }
 
     // ---------------- 托盘 ----------------
@@ -423,12 +403,9 @@ public partial class App : Application
         _alertTimer?.Stop();
         _alertTimer = null;
 
-        // 唤醒等待中的监听线程（它是后台线程，不阻塞退出）
-        _showHudEvent?.Set();
-        _showHudThread?.Join(TimeSpan.FromSeconds(1));
-        _showHudThread = null;
-        _showHudEvent?.Dispose();
-        _showHudEvent = null;
+        // 关掉唤醒通路（内部会唤醒并回收监听线程）
+        _showHudChannel?.Dispose();
+        _showHudChannel = null;
 
         _watcher?.Dispose();
         _watcher = null;
