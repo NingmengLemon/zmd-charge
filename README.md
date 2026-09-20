@@ -205,18 +205,36 @@ Windows 与 Linux 共用一份代码（单 TFM `net10.0`）。平台专有实现
 单实例那两行值得单独说：**命名 `EventWaitHandle` 与命名 `Semaphore` 在 Linux 上会抛
 `PlatformNotSupportedException`**，只有命名 `Mutex` 例外地可用，所以唤醒通路必须分平台。
 
-### Linux 侧已验证与未验证
+### Linux 侧已验证
 
-已在 Debian 13 + .NET 10.0.401 上实测：构建与 109 个单测、Release 发布（RID 正确解析为
-`linux-x64`）、单实例判定、唤醒通路、HUD 窗口的尺寸与定位（Xvfb 下实测窗口为
-`448x72+1056+4`，即 560×90 × 0.8 且水平居中）、打包出的 tar.gz 解压后可直接运行。
+在 Debian 13（无头，Xvfb）与 Arch Linux + KDE Plasma（真机，2880x1800、缩放 1.75）上实测：
 
-**尚未验证**（需要带桌面环境的实机）：
+- 构建与 109 个单测、Release 发布（RID 正确解析为 `linux-x64`）、打包出的 tar.gz 解压后可直接运行
+- 单实例判定（命名 Mutex）与唤醒通路（Unix 域套接字）。上一次异常退出留下的套接字文件
+  会在下次启动时被清掉，实测带残留套接字能正常重启
+- HUD 窗口尺寸与定位：KDE 上实测窗口落在物理 (1048, 4)、784x126，即逻辑 448x72 且水平居中
+  （(2880-784)/2 = 1048），分数缩放 1.75 下换算正确
+- 窗口透明（胶囊周围能看到桌面壁纸）与 `Topmost`（压在其它窗口之上）
+- 托盘图标：启动后 `org.kde.StatusNotifierWatcher` 的注册项多出本应用，退出后消失
+- 真实电池：`BAT0` 的 `energy_now`/`energy_full` = 99900000/99900000 µWh 与 `capacity`=100
+  被正确读成 99900/99900 mWh 与 100%
 
-- 托盘图标。Avalonia 在 Linux 走 DBus StatusNotifierItem，需要桌面环境提供宿主；
-  GNOME 默认不显示托盘图标，可能要装 AppIndicator 扩展。
-- 窗口透明、`Topmost`、Wayland 下的行为、多显示器与 DPI。
-- 真实电池。测试机是虚拟机，没有电池，电池读取目前只由 fixture 目录的单测覆盖。
+### Linux 需要 X11 或 Xwayland
+
+Avalonia 的 `UsePlatformDetect()` 在 Linux 上**只加载 X11 后端**
+（`Avalonia.Desktop` 的依赖里根本没有 `Avalonia.Wayland`），所以本应用在 Linux 上跑的是 X11，
+在 Wayland 桌面上实际是走 Xwayland。实测：只给 `WAYLAND_DISPLAY`、不给 `DISPLAY` 时，
+启动会直接抛 `XOpenDisplay failed`。
+
+这是有意保留的，不是遗漏：**Wayland 没有让客户端自己设置窗口位置的协议**，而 HUD 的核心行为
+就是"顶部居中弹一下"，原生 Wayland 下做不到（要靠 wlr-layer-shell 之类的合成器协议，
+Avalonia 没有暴露）。KDE / GNOME 等主流桌面都自带 Xwayland，所以这条路径可用；
+纯 Wayland 且不带 Xwayland 的环境目前不支持。
+
+### 尚未验证
+
+- 多显示器。测试机只有一块屏。
+- GNOME 上的托盘。GNOME 默认不显示托盘图标，可能要装 AppIndicator 扩展。
 
 ## 动画实现要点
 
